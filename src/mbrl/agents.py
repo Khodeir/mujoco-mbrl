@@ -7,24 +7,19 @@ from src.mbrl.data import Data
 from src.mbrl.models import Model, LinearModel, SmoothAbsLoss, CoshLoss
 
 from torch.utils.data import DataLoader
-
-from dm_control import suite
-from src.mbrl.utils import sample_humanoid_state, sample_hopper_state, sample_walker_state
+from src.mbrl.env_wrappers import EnvWrapper
 
 
 class Agent:
 
-    def __init__(self, env_name, task_name, goalState, model, num_hidden, multistep=1, noise=None, traj_length=100,
+    def __init__(self, env_name, task_name, goal_state, model, num_hidden, multistep=1, noise=None, traj_length=100,
                  H=10, K=1000, writer=None):
 
-        state_dims = {'point_mass': 4, 'reacher': 4, 'cheetah': 18 - 1 + 2, 'manipulator': 22 + 7, 'humanoid': 55 + 5,
-                      'swimmer': 10 + 2, 'walker': 18 - 1 + 3, 'hopper': 14 - 1 + 4}
 
-        self.env = suite.load(env_name, task_name, visualize_reward=True)
+        self.env = EnvWrapper.load(env_name, task_name, visualize_reward=True)
         self.env_name = env_name
-        self.action_spec = self.env.action_spec()
-        self.state_dim = state_dims[env_name]
-        self.action_dim = self.action_spec.shape[0]
+        self.state_dim = self.env.state_dim
+        self.action_dim = self.env.action_spec.shape[0]
         self.multistep = multistep
         self.num_hidden = num_hidden
         self.model_type = model
@@ -48,9 +43,10 @@ class Agent:
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learn_rate, weight_decay=l2_penalty)
 
-        self.set_goal(goalState)
+        self.set_goal(goal_state)
         self.action_cost = CoshLoss()
 
+        # TODO: Put this in some config file
         init_data = {'point_mass': (100, 250), 'reacher': (100, 250), 'cheetah': (500, 200),
                      'manipulator': (500, 150), 'swimmer': (200, 300), 'humanoid': (1000, 40), 'walker': (1500, 50),
                      'hopper': (100, 200)}  # Walker was 3000 x 25
@@ -59,48 +55,8 @@ class Agent:
         self.writer = writer
 
     def set_goal(self, goal_state):
-        self.goalState = goal_state
-        state_penalty = 1.0
-        weights = torch.zeros(self.state_dim)
-        # --------------------------------------------------------------------------------
-        if self.env_name == 'point_mass':
-            weights[0:2] = 10 * state_penalty
-            weights[2:] = state_penalty / 4.  # Penalties on the velocities act as dampers
-
-        elif self.env_name == 'reacher':
-            weights[0:2] = state_penalty
-            weights[2:] = state_penalty / 20.  # Penalties on the velocities act as dampers
-
-        elif self.env_name == 'cheetah':
-            weights[17] = state_penalty
-            weights[18] = state_penalty / 2.
-
-        elif self.env_name == 'swimmer':
-            weights[0:1] = 10 * state_penalty  # Distance to target
-            # weights[18] = state_penalty/2.
-            weights[5:-2] = state_penalty  # velocities
-            # weights[8:-2] = state_penalty/4. ## velocities
-
-        elif self.env_name == 'manipulator':
-            weights = torch.zeros(self.state_dim)
-            weights[8:10] = 10 * state_penalty
-            weights[10:21] = state_penalty / 4
-            weights[-7:-5] = 10 * state_penalty
-            weights[-5:] = state_penalty / 20
-
-        elif self.env_name == 'humanoid':
-            weights = torch.zeros(self.state_dim)
-            weights[-5:] = 10 * state_penalty
-
-        elif self.env_name == 'walker':
-            weights = torch.zeros(self.state_dim)
-            weights[-3:] = state_penalty
-
-        elif self.env_name == 'hopper':
-            weights = torch.zeros(self.state_dim)
-            weights[-2] = state_penalty / 2.
-            weights[-1] = state_penalty
-        # --------------------------------------------------------------------------------
+        self.goal_state = goal_state
+        weights = torch.from_numpy(self.env.get_goal_weights())
         self.state_cost = SmoothAbsLoss(weights=weights, goal_state=goal_state)
 
     def test_H_step_pred(self, H=10):
@@ -114,7 +70,7 @@ class Agent:
         predicted_trajectory = [s0.numpy(), ]
 
         for i in range(H):
-            action = self.sample_single_action()
+            action = self.env.sample_action()
             _ = self.env.step(action)
             next_state = self.get_state(normalise=True)
 
@@ -129,55 +85,7 @@ class Agent:
         return true_trajectory, predicted_trajectory
 
     def get_state(self, normalise=False):
-        # Reacher and Point-Mass
-        if (self.env_name == 'point_mass') or (self.env_name == 'reacher'):
-            state = self.env.physics.state()
-        elif self.env_name == 'manipulator':
-            state = self.env.physics.state()
-            state = np.append(state, self.env.physics.named.data.site_xpos['grasp', 'x'])  # gripper position
-            state = np.append(state, self.env.physics.named.data.site_xpos['grasp', 'z'])  # gripper position
-            state = np.append(state, self.env.physics.touch())  # Sensors. 5 dimensions
-        elif self.env_name == 'cheetah':
-            state = self.env.physics.state()[1:]
-            state = np.append(state, self.env.physics.speed())  # Add horizontal speed
-            state = np.append(state, self.env.physics.named.data.subtree_com['torso'][2])  # Add torso height
-        elif self.env_name == 'swimmer':
-            # Assume swimmer6 for now
-            state = self.env.physics.state()  # 16-2 dims
-            state = np.append(state, self.env.physics.named.data.xmat['head'][:2])  # Head orientation (2)
-            # state = np.append(state, self.env.physics.joints()) ##All internal joint angles (K-1) (5)
-            # state = np.append(state, self.env.physics.body_velocities()) ## All local velocities (3*K) (18)
-        elif self.env_name == 'humanoid':
-            state = self.env.physics.state()  # 55 (pure state)
-            # state = np.append(state, self.env.physics.head_height()) ## +1 head height (target should be 1.6)
-            # state = np.append(state, self.env.physics.torso_upright()) ## +1 torso projected height (target should be 1.0)
-            com_pos = self.env.physics.center_of_mass_position()
-            rfoot = self.env.physics.named.data.xpos['right_foot']
-            lfoot = self.env.physics.named.data.xpos['left_foot']
-            ave_foot = (rfoot + lfoot) / 2.0
-            above_feet = ave_foot + np.array([0., 0., 1.3])
-            torso = self.env.physics.named.data.xpos['torso']
-
-            first_penalty = np.linalg.norm(com_pos[:2] - ave_foot[:2])  # First described by Tassa
-            second_penalty = np.linalg.norm(com_pos[:2] - torso[:2])  # Second term described by Tassa
-            third_penalty = np.linalg.norm(torso[1:] - above_feet[1:])  # Third term
-
-            state = np.append(state, first_penalty)  # +1
-            state = np.append(state, second_penalty)  # +1
-            state = np.append(state, third_penalty)  # +1
-            state = np.append(state, self.env.physics.center_of_mass_velocity()[:2])  # +2 velocity should be 0
-
-        elif self.env_name == 'walker':
-            state = self.env.physics.state()[1:]
-            state = np.append(state, self.env.physics.torso_upright())  # Add torso upright
-            state = np.append(state, self.env.physics.torso_height())  # Add torso height
-            state = np.append(state, self.env.physics.horizontal_velocity())  # Add horizontal speed
-        elif self.env_name == 'hopper':
-            state = self.env.physics.state()[1:]  # Removed horizontal position
-            state = np.append(state, self.env.physics.touch())  # Add touch sensors in feet
-            state = np.append(state, self.env.physics.height())  # Add torso height
-            state = np.append(state, self.env.physics.speed())  # Add horizontal speed
-
+        state = self.env.get_state()
         return self.normalise_state(state) if normalise else state
 
     def set_linear_model(self, a, b, noise_rate=0.0):
@@ -202,32 +110,13 @@ class Agent:
             try:
                 # Initial timestep
                 _ = self.env.reset()
-                # ----------- Humanoid needs a different setup - make it start standing
-                if self.env_name == 'humanoid':
-                    initial_state = sample_humanoid_state()
-                    with self.env.physics.reset_context():
-                        self.env.physics.set_state(initial_state)
-                # ----------- Walker needs a different setup - make it start standing
-                if self.env_name == 'walker':
-                    initial_state = sample_walker_state()
-                    with self.env.physics.reset_context():
-                        self.env.physics.set_state(initial_state)
-                # ----------- Hopper needs a different setup - make it start standing
-                if self.env_name == 'hopper':
-                    initial_state = sample_hopper_state()
-                    with self.env.physics.reset_context():
-                        self.env.physics.set_state(initial_state)
-                # ----------- Swimmer needs a different setup - randomise heading direction
-                if self.env_name == 'swimmer':
-                    initial_state = self.env.physics.state()
-                    initial_state[2] = np.random.uniform(-3.14, 3.14)
-                    with self.env.physics.reset_context():
-                        self.env.physics.set_state(initial_state)
-                # ------------------------------------------------------------------
+                initial_state = self.env.sample_state()
+                with self.env.physics.reset_context():
+                    self.env.physics.set_state(initial_state)
                 s0 = self.get_state(normalise=False)
                 trajectory = [s0, ]
                 for i in range(traj_length):
-                    action = self.sample_single_action()
+                    action = self.env.sample_action()
                     trajectory.append(action)
 
                     timestep = self.env.step(action)
@@ -270,7 +159,7 @@ class Agent:
             # 1) Randomly choose an initial state s0 and H random actions
             _ = self.env.reset()
             s0 = torch.tensor(self.get_state(normalise=True), dtype=torch.float)
-            actions = [self.sample_single_action() for _ in range(roll_length)]
+            actions = [self.env.sample_action() for _ in range(roll_length)]
             # 2) Use the environment to generate a length H rollout from s0 using random actions
             targets = [s0]
             for a in actions:
@@ -444,20 +333,6 @@ class Agent:
                 running_loss /= (int(len(self.D) / batch) + 1)
                 self.writer.add_scalar('loss/state/{}'.format(iteration), running_loss, epoch)
 
-    def sample_single_action(self):
-        minimum = max(self.action_spec.minimum[0], -3)  # Clipping because LQR task has INF bounds
-        maximum = min(self.action_spec.maximum[0], 3)
-        action = np.random.uniform(minimum, maximum, self.action_spec.shape[0])
-
-        if self.env_name == 'humanoid':
-            action = np.random.normal(0, 0.4, self.action_dim)
-            action[3:-6] = 0.
-
-        return action
-
-    def sample_batch_action(self, n):
-        action = np.random.uniform(self.action_spec.minimum, self.action_spec.maximum, (n, self.action_spec.shape[0]))
-        return action
 
     def normalise_state(self, state):
         state = torch.tensor(state, dtype=torch.float)
@@ -484,7 +359,7 @@ class GDAgent(Agent):
         """
         state = torch.tensor(self.get_state(normalise=True), dtype=torch.float)
         x_list = [state]  # a list of torch tensors
-        u_list = [torch.tensor(self.sample_single_action(), dtype=torch.float, requires_grad=True)
+        u_list = [torch.tensor(self.env.sample_action(), dtype=torch.float, requires_grad=True)
                   for _ in range(self.H)]
 
         for i in range(self.H):
@@ -506,7 +381,7 @@ class GDAgent(Agent):
         else:
             new_x_list, new_u_list = self.x_list[1:], self.u_list[1:]
             # ----------- Get new random action, generate new last state ----------------------------------
-            new_u_list.append(torch.tensor(self.sample_single_action(), dtype=torch.float, requires_grad=True))
+            new_u_list.append(torch.tensor(self.env.sample_action(), dtype=torch.float, requires_grad=True))
             joint_state = torch.cat([new_x_list[-1], new_u_list[-1]])
             next_state = self.model(joint_state)
             new_x_list.append(next_state)
