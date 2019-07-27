@@ -12,7 +12,7 @@ class EnvWrapper(environment.Base):
 
     @staticmethod
     def load(env_name, task_name, **kwargs):
-        env = suite.load(env, task_name, **kwargs)
+        env = suite.load(env_name, task_name, **kwargs)
         wrapper_classname = "".join([part.capitalize() for part in env_name.split("_")])
         try:
             wrapper = eval(wrapper_classname)(env)
