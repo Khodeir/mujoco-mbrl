@@ -5,9 +5,6 @@ import numpy as np
 
 class EnvWrapper(environment.Base):
     def __init__(self, env):
-        action_spec = env.action_spec()
-        self._minimum = action_spec.minimum
-        self._maximum = action_spec.maximum
         self._env = env
 
     @staticmethod
@@ -29,11 +26,12 @@ class EnvWrapper(environment.Base):
         raise NotImplementedError
 
     def sample_action(self):
+        action_spec = self.action_spec()
         minimum = max(
-            self.action_spec.minimum[0], -3
+            action_spec.minimum[0], -3
         )  # Clipping because LQR task has INF bounds
-        maximum = min(self.action_spec.maximum[0], 3)
-        action = np.random.uniform(minimum, maximum, self.action_spec.shape[0])
+        maximum = min(action_spec.maximum[0], 3)
+        action = np.random.uniform(minimum, maximum, action_spec.shape[0])
         return action
 
     def get_goal_weights(self):

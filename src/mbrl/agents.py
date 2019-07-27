@@ -19,7 +19,7 @@ class Agent:
         self.env = EnvWrapper.load(env_name, task_name, visualize_reward=True)
         self.env_name = env_name
         self.state_dim = self.env.state_dim
-        self.action_dim = self.env.action_spec.shape[0]
+        self.action_dim = self.env.action_spec().shape[0]
         self.multistep = multistep
         self.num_hidden = num_hidden
         self.model_type = model
@@ -85,6 +85,7 @@ class Agent:
         return true_trajectory, predicted_trajectory
 
     def get_state(self, normalise=False):
+        # TODO: Something about the fact that this returns a torch tensor or a numpy array depending on normalize
         state = self.env.get_state()
         return self.normalise_state(state) if normalise else state
 
