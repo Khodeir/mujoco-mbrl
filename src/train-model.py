@@ -1,4 +1,4 @@
-from src.mbrl.agents import iLQRAgent, MPCAgent, GDAgent
+from src.mbrl.agents import iLQRAgent, RandomShootingAgent, GDAgent
 from tqdm import tqdm
 from dm_control import suite
 
@@ -84,9 +84,9 @@ for iteration in range(args.num_trials):
             experiment_name += '-noise=' + str(args.noise_level)
         writer = SummaryWriter(log_dir=os.path.join('logs', experiment_name))
 
-        agent = MPCAgent(goalState=goal, env_name=env_name, task_name=task_name, model=args.model,
-                         num_hidden=args.num_hidden, noise=args.noise_level, multistep=args.multistep,
-                         traj_length=args.traj_length, H=args.H, K=args.K, writer=writer)
+        agent = RandomShootingAgent(goalState=goal, env_name=env_name, task_name=task_name, model=args.model,
+                                    num_hidden=args.num_hidden, noise=args.noise_level, multistep=args.multistep,
+                                    traj_length=args.traj_length, H=args.H, K=args.K, writer=writer)
     
     for agg_iter in range(args.agg_iters):
         print('Aggregation iteration number: ', agg_iter)

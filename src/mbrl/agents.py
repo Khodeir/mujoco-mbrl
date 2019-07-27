@@ -426,3 +426,71 @@ class GDAgent(Agent):
     def choose_action(self):
         self.optimize_trajectory()
         return self.u_list[0].detach().numpy()
+
+
+class RandomShootingAgent(Agent):
+
+    def __init__(self, **kwargs):
+        super(RandomShootingAgent, self).__init__(**kwargs)
+
+    def choose_action(self):
+        state = torch.tensor(self.get_state(normalise=True), dtype=torch.float)
+
+        if self.RNN:
+            initial_state = state.repeat(self.K, 1)
+            initial_state = initial_state.reshape((1, self.K, self.state_dim))
+            actions = torch.tensor([self.sample_batch_action(self.K) for _ in range(self.H)], dtype=torch.float)
+            actions = actions.reshape(self.K, self.H, self.action_dim)
+            # states should have dim = (K, H, state_dim)
+            states = self.model(initial_state, actions)
+            # print('predicted states has dimension = ', states.shape)
+
+            best_traj = -1
+            best_so_far = 9999999999
+            for i in range(self.K):
+                reward = 0
+                for j in range(self.H):
+                    reward += self.state_cost(states[i][j]) + self.action_cost(actions[i][j])
+                if reward < best_so_far:
+                    best_so_far = reward
+                    best_traj = i
+
+            action = actions[best_traj][0]
+
+        else:
+            trajectories = self.generate_trajectories(state)
+            trajectory_scores = self.score_trajectories(trajectories)
+            chosen_trajectory_idx = np.argmin(trajectory_scores)
+            action = trajectories[1][chosen_trajectory_idx]
+
+        return action
+
+    def generate_trajectories(self, state):
+
+        states = np.expand_dims(state, 0).repeat(self.K, 0)  # matrix size K * state_dimensions, each row is the state
+        trajectories = [states, ]
+        for _ in range(self.H):
+            # sample actions
+            actions = self.sample_batch_action(self.K)
+            # infer with model
+            states = torch.tensor(states, dtype=torch.float)
+            actions = torch.tensor(actions, dtype=torch.float)
+            state_action = torch.cat([states, actions], 1)
+
+            states = self.model(state_action)
+            rewards = np.zeros(self.K)
+            for i in range(self.K):
+                rewards[i] = self.state_cost(states[i]) + self.action_cost(actions[i])
+
+            # update trajectory
+            trajectories.append(actions)
+            trajectories.append(rewards)
+            trajectories.append(states)
+
+        return trajectories
+
+    def score_trajectories(self, trajectories):
+        rewards = np.zeros((self.K,))
+        for reward_idx in range(2, len(trajectories), 3):
+            rewards += trajectories[reward_idx]
+        return rewards
