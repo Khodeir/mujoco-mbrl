@@ -93,7 +93,7 @@ class Rollout:
 
 
 class TransitionsDataset(Dataset):
-    def __init__(self, rollouts: List[Rollout], transitions_capacity: int, horizon=1, normalise=True):
+    def __init__(self, rollouts: List[Rollout], transitions_capacity: int = 1e6, horizon: int = 1, normalise=True):
         super().__init__()
         self.capacity = transitions_capacity
         self.horizon = horizon
