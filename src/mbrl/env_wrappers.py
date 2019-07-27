@@ -41,6 +41,19 @@ class EnvWrapper(environment.Base):
         weights = np.zeros(self.state_dim)
         return weights
 
+    def reset(self):
+        return self._env.reset()
+
+    def observation_spec(self):
+        return self._env.observation_spec()
+
+    def action_spec(self):
+        return self._env.action_spec()
+
+    def step(self, action):
+        return self._env.step(action)
+
+
 
 class PointMass(EnvWrapper):
     state_dim = 4
