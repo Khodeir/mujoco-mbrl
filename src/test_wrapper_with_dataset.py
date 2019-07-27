@@ -8,13 +8,13 @@ def random_rollout(environment, num_steps):
     states, actions, observations, rewards = [], [], [], []
     for _ in range(num_steps):
         action = environment.sample_action()
-        t = environment.step(action)
-        state = environment.get_state()
+        state, observation, reward = environment.step(action)
         states.append(state)
+        observations.append(observation)
         actions.append(action)
-        observations.append(t.observation)
-        rewards.append(t.reward)
+        rewards.append(reward)
 
+        _ = environment.reset()
     return Rollout(states=states, observations=observations, actions=actions[:-1], rewards=rewards[1:])
 
 
@@ -30,7 +30,7 @@ def pretty_print_transition(inps, targets):
 
 env = EnvWrapper.load(env_name="reacher", task_name="easy")
 episode_len = 500
-num_episodes = 100
+num_episodes = 10
 start = time.time()
 rollouts = [random_rollout(environment=env, num_steps=episode_len) for _ in range(num_episodes)]
 mid = time.time()
