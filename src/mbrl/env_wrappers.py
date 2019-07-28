@@ -1,9 +1,10 @@
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Callable, Optional
 import torch
 import numpy as np
 
 from dm_control import suite
 from dm_control.rl import environment
+from src.mbrl.data import Rollout
 
 
 class EnvWrapper(environment.Base):
@@ -51,11 +52,43 @@ class EnvWrapper(environment.Base):
     def action_spec(self):
         return self._env.action_spec()
 
-    def step(self, action: torch.Tensor) -> Tuple[torch.Tensor, Dict[str: torch.Tensor], torch.Tensor]:
+    def step(
+        self, action: torch.Tensor
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor]]:
         t = self._env.step(np.array(action))
-        obs = {k: torch.tensor(v) for k, v in t.observation.items()}
+        obs = {str(k): torch.tensor(v) for k, v in t.observation.items()}
         reward = torch.tensor(t.reward) if t.reward is not None else None
         return self.get_state(), obs, reward
+
+    def get_rollout(
+        self, num_steps: int, get_action: Callable[[torch.Tensor], torch.Tensor] = None
+    ) -> Rollout:
+        if get_action is None:
+            get_action = lambda state: self.sample_action()
+
+        states, actions, observations, rewards = [], [], [], []
+
+        _ = self.reset()
+        initial_state = self.sample_state()
+        with self._env.physics.reset_context():
+            self._env.physics.set_state(initial_state)
+
+        state = self.get_state()
+        for _ in range(num_steps):
+            action = get_action(state)
+            state, observation, reward = self.step(action)
+            states.append(state)
+            observations.append(observation)
+            actions.append(action)
+            rewards.append(reward)
+
+            _ = self.reset()
+        return Rollout(
+            states=states,
+            observations=observations,
+            actions=actions[:-1],
+            rewards=rewards[1:],
+        )
 
 
 class PointMass(EnvWrapper):
@@ -300,7 +333,9 @@ class Swimmer(EnvWrapper):
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()  # 16-2 dims
-        state = np.append(state, self.env.physics.named.data.xmat["head"][:2])  # Head orientation (2)
+        state = np.append(
+            state, self.env.physics.named.data.xmat["head"][:2]
+        )  # Head orientation (2)
         return torch.tensor(state)
 
     def get_goal_weights(self):
@@ -328,9 +363,12 @@ class Walker(EnvWrapper):
         state[5] = np.random.uniform(
             -0.1, 0.1
         )  # right_ankle (-45, 45)  = (-0.7854, 0.7854)
-        state[6] = -hip_rot  # np.random.uniform(-0.3491, 1.) ## left_hip (-20, 100)   = (-0.3491, 1.7452)
+
+        state[6] = -hip_rot
         state[7] = np.random.uniform(-0.3, 0)  # left_knee (-150, 0)   = (-2.6178 , 0)
-        state[8] = np.random.uniform(-0.1, 0.1)  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
+        state[8] = np.random.uniform(
+            -0.1, 0.1
+        )  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
 
         # state[9:] = np.random.uniform(-0.04, 0.04, 9) ## Velocities
 
@@ -340,7 +378,9 @@ class Walker(EnvWrapper):
         state = super().get_state()[1:]
         state = np.append(state, self.env.physics.torso_upright())  # Add torso upright
         state = np.append(state, self.env.physics.torso_height())  # Add torso height
-        state = np.append(state, self.env.physics.horizontal_velocity())  # Add horizontal speed
+        state = np.append(
+            state, self.env.physics.horizontal_velocity()
+        )  # Add horizontal speed
         return torch.tensor(state)
 
     def get_goal_weights(self):
