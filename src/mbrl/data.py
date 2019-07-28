@@ -1,5 +1,6 @@
 from typing import List
 from collections import defaultdict
+import torch
 from torch.utils.data import Dataset
 import numpy as np
 
@@ -93,7 +94,7 @@ class Rollout:
 
 
 class TransitionsDataset(Dataset):
-    def __init__(self, rollouts: List[Rollout], transitions_capacity: int, horizon=1, normalise=True):
+    def __init__(self, rollouts: List[Rollout], transitions_capacity: int = 1e6, horizon: int = 1, normalise=True):
         super().__init__()
         self.capacity = transitions_capacity
         self.horizon = horizon
@@ -168,28 +169,26 @@ class TransitionsDataset(Dataset):
         all_states, all_actions, all_rewards = [], [], []
         all_obs = defaultdict(lambda: [])
         for r in self._rollouts:
-            all_states.append(r.states)
-            all_actions.append(r.actions)
-            all_rewards.append(r.rewards)
+            all_states.append(torch.stack(r.states))
+            all_actions.append(torch.stack(r.actions[:-1]))  # Ignore last action
+            all_rewards.append(torch.stack(r.rewards[1:]))   # Ignore first reward
             for obs in r.observations:
                 for k, v in obs.items():
                     all_obs[k].append(v)
 
-        stats["states"] = self._get_stats(np.concatenate(all_states))
-        actions = np.concatenate(all_actions)
-        stats["actions"] = self._get_stats(np.array([a for a in actions if a is not None]))  # filter out Nones
-        rewards = np.concatenate(all_rewards)
-        stats["rewards"] = self._get_stats(np.array([r for r in rewards if r is not None]))
-        stats["observations"] = {k: self._get_stats(np.concatenate(v)) for k, v in all_obs.items()}
+        stats["states"] = self._get_stats(torch.cat(all_states))
+        stats["actions"] = self._get_stats(torch.cat(all_actions))
+        stats["rewards"] = self._get_stats(torch.cat(all_rewards))
+        stats["observations"] = {k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()}
 
         self._stats = stats
 
     @staticmethod
     def _get_stats(array):
-        return {"mean": np.mean(array, axis=0),
-                "std": np.std(array, axis=0),
-                "min": np.min(array, axis=0),
-                "max": np.max(array, axis=0)}
+        return {"mean": torch.mean(array, dim=0),
+                "std": torch.std(array, dim=0),
+                "min": torch.min(array, dim=0),
+                "max": torch.max(array, dim=0)}
 
 
 # -------------------------------------------------------------------------------------------
@@ -199,33 +198,36 @@ class TransitionsDataset(Dataset):
 # act_dim = 1
 #
 # h_1 = 50000
-# s = [50*np.random.randn(state_dim) + 150 for _ in range(h_1)]
-# o = [{'first': 15 * np.random.randn(1), 'second': 0.2 * np.random.randn(1) - 12.3} for _ in range(h_1)]
-# a = [np.random.randn(act_dim) for _ in range(h_1 - 1)]
-# r = [np.random.randn(1) for _ in range(h_1 - 1)]
+# state_dist = torch.distributions.Normal(loc=150, scale=50)
+# first_dist = torch.distributions.Normal(loc=0, scale=15)
+# second_dist = torch.distributions.Normal(loc=-12, scale=0.3)
+# act_dist = torch.distributions.Normal(loc=1, scale=2)
+# reward_dist = torch.distributions.Normal(loc=0, scale=10)
+#
+# s = [state_dist.sample((state_dim,)) for _ in range(h_1)]
+# o = [{'first': first_dist.sample(), 'second': second_dist.sample()} for _ in range(h_1)]
+# a = [act_dist.sample((act_dim,)) for _ in range(h_1 - 1)]
+# r = [reward_dist.sample() for _ in range(h_1 - 1)]
 # r1 = Rollout(states=s, observations=o, actions=a, rewards=r)
 #
 # h_2 = 12000
-# s = [40*np.random.randn(state_dim) + 110 for _ in range(h_2)]
-# o = [{'first': 12 * np.random.randn(1), 'second': 0.3 * np.random.randn(1) - 12.4} for _ in range(h_2)]
-# a = [np.random.randn(act_dim) for _ in range(h_2 - 1)]
-# r = [np.random.randn(1) for _ in range(h_2 - 1)]
+# s = [state_dist.sample((state_dim,)) for _ in range(h_2)]
+# o = [{'first': first_dist.sample(), 'second': second_dist.sample()} for _ in range(h_2)]
+# a = [act_dist.sample((act_dim,)) for _ in range(h_2 - 1)]
+# r = [reward_dist.sample() for _ in range(h_2 - 1)]
 # r2 = Rollout(states=s, observations=o, actions=a, rewards=r)
 #
 # h_3 = 40000
-# s = [55*np.random.randn(state_dim) + 180 for _ in range(h_3)]
-# o = [{'first': 11 * np.random.randn(1), 'second': 0.22 * np.random.randn(1) - 12.2} for _ in range(h_3)]
-# a = [np.random.randn(act_dim) for _ in range(h_3 - 1)]
-# r = [np.random.randn(1) for _ in range(h_3 - 1)]
+# s = [state_dist.sample((state_dim,)) for _ in range(h_3)]
+# o = [{'first': first_dist.sample(), 'second': second_dist.sample()} for _ in range(h_3)]
+# a = [act_dist.sample((act_dim,)) for _ in range(h_3 - 1)]
+# r = [reward_dist.sample() for _ in range(h_3 - 1)]
 # r3 = Rollout(states=s, observations=o, actions=a, rewards=r)
 #
 # dataset = TransitionsDataset(rollouts=[r1, r2], transitions_capacity=100000, horizon=2)
 #
 # transitions = [t for t in dataset]
 # inputs, targets = dataset.get_transition()
-#
-# import pdb
-# pdb.set_trace()
 #
 # dataset.add_rollouts([r3])
 #

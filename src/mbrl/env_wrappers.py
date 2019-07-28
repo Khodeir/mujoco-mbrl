@@ -1,11 +1,15 @@
+from typing import Tuple, Dict
+import torch
+import numpy as np
+
 from dm_control import suite
 from dm_control.rl import environment
-import numpy as np
 
 
 class EnvWrapper(environment.Base):
     def __init__(self, env):
         self._env = env
+        self._state_penalty = 1.0
 
     @staticmethod
     def load(env_name, task_name, **kwargs):
@@ -17,26 +21,25 @@ class EnvWrapper(environment.Base):
         except NameError:
             raise NameError("No wrapper for {}".format(env_name))
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         # TODO: Do something about the fact that get_state has a potentially
         # different dimension than sample_state
-        return self._env.physics.state()
+        return torch.tensor(self._env.physics.state())
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         raise NotImplementedError
 
-    def sample_action(self):
+    def sample_action(self) -> torch.Tensor:
         action_spec = self.action_spec()
         minimum = max(
             action_spec.minimum[0], -3
         )  # Clipping because LQR task has INF bounds
         maximum = min(action_spec.maximum[0], 3)
         action = np.random.uniform(minimum, maximum, action_spec.shape[0])
-        return action
+        return torch.tensor(action)
 
-    def get_goal_weights(self):
-        self._state_penalty = 1.0
-        weights = np.zeros(self.state_dim)
+    def get_goal_weights(self) -> torch.Tensor:
+        weights = torch.zeros(self.state_dim)
         return weights
 
     def reset(self):
@@ -48,9 +51,11 @@ class EnvWrapper(environment.Base):
     def action_spec(self):
         return self._env.action_spec()
 
-    def step(self, action):
-        return self._env.step(action)
-
+    def step(self, action: torch.Tensor) -> Tuple[torch.Tensor, Dict[str: torch.Tensor], torch.Tensor]:
+        t = self._env.step(np.array(action))
+        obs = {k: torch.tensor(v) for k, v in t.observation.items()}
+        reward = torch.tensor(t.reward) if t.reward is not None else None
+        return self.get_state(), obs, reward
 
 
 class PointMass(EnvWrapper):
@@ -67,20 +72,18 @@ class PointMass(EnvWrapper):
 
 class Reacher(EnvWrapper):
     state_dim = 4
-    def sample_state(self):
-        state_dim = 4
+
+    def sample_state(self) -> torch.Tensor:
         state = np.zeros(self.state_dim)
 
-        state[0] = np.random.uniform(
-            low=-np.pi, high=np.pi
-        )  # 2*np.pi*np.random.rand()- np.pi
+        state[0] = np.random.uniform(low=-np.pi, high=np.pi)
         state[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
         state[2] = np.random.uniform(low=-3, high=3)
         state[3] = np.random.uniform(low=-3, high=3)
 
-        return state
+        return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
 
         weights[0:2] = self._state_penalty
@@ -94,7 +97,7 @@ class Reacher(EnvWrapper):
 class Cheetah(EnvWrapper):
     state_dim = 18 - 1 + 2
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         state_dim = 18
         state = np.zeros(state_dim)
         state[1] = np.random.uniform(-0.2, 0.2)  # Vertical Height
@@ -125,17 +128,17 @@ class Cheetah(EnvWrapper):
         )  # ffoot (-28, 28) = (-0.4887, 0.4887)
         state[9:] = np.random.uniform(-3, 3, 9)  # Velocities
 
-        return state
+        return torch.tensor(state)
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]
         state = np.append(state, self._env.physics.speed())  # Add horizontal speed
         state = np.append(
             state, self._env.physics.named.data.subtree_com["torso"][2]
         )  # Add torso height
-        return state
+        return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[17] = self._state_penalty
         weights[18] = self._state_penalty / 2.0
@@ -145,7 +148,7 @@ class Cheetah(EnvWrapper):
 class Manipulator(EnvWrapper):
     state_dim = 22 + 7
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()
         state = np.append(
             state, self._env.physics.named.data.site_xpos["grasp", "x"]
@@ -154,9 +157,9 @@ class Manipulator(EnvWrapper):
             state, self._env.physics.named.data.site_xpos["grasp", "z"]
         )  # gripper position
         state = np.append(state, self._env.physics.touch())  # Sensors. 5 dimensions
-        return state
+        return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[8:10] = 10 * self._state_penalty
         weights[10:21] = self._state_penalty / 4
@@ -168,7 +171,7 @@ class Manipulator(EnvWrapper):
 class Humanoid(EnvWrapper):
     state_dim = 55 + 5
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         state_dim = 55
         state = np.zeros(state_dim)  # Removed 0,1 and 3,4,5,6
 
@@ -243,14 +246,14 @@ class Humanoid(EnvWrapper):
 
         # state[34:] = 0.1*np.random.uniform(-0.1, 0.1, 21)  # Velocities
 
-        return state
+        return torch.tensor(state)
 
-    def sample_action(self):
+    def sample_action(self) -> torch.Tensor:
         action = np.random.normal(0, 0.4, self.action_dim)
         action[3:-6] = 0.0
-        return action
+        return torch.tensor(action)
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()  # 55 (pure state)
         # state = np.append(state, self.env.physics.head_height()) ## +1 head height (target should be 1.6)
         # state = np.append(state, self.env.physics.torso_upright()) ## +1 torso projected height (target should be 1.0)
@@ -275,7 +278,7 @@ class Humanoid(EnvWrapper):
         state = np.append(
             state, self.env.physics.center_of_mass_velocity()[:2]
         )  # +2 velocity should be 0
-        return state
+        return torch.tensor(state)
 
     def get_goal_weights(self):
         weights = super().goal_weights()
@@ -286,21 +289,19 @@ class Humanoid(EnvWrapper):
 class Swimmer(EnvWrapper):
     state_dim = 10 + 2
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         state_dim = 10
         # Assuming swimmer3
         state = np.zeros(state_dim)
 
         state[2] = np.random.uniform(low=-3, high=3)
 
-        return state
+        return torch.tensor(state)
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()  # 16-2 dims
-        state = np.append(
-            state, self.env.physics.named.data.xmat["head"][:2]
-        )  # Head orientation (2)
-        return state
+        state = np.append(state, self.env.physics.named.data.xmat["head"][:2])  # Head orientation (2)
+        return torch.tensor(state)
 
     def get_goal_weights(self):
         weights = super().goal_weights()
@@ -314,7 +315,7 @@ class Swimmer(EnvWrapper):
 class Walker(EnvWrapper):
     state_dim = 18 - 1 + 3
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         state_dim = 18
         state = np.zeros(state_dim)
         # state[0] = np.random.uniform() ## horizontal position
@@ -327,28 +328,20 @@ class Walker(EnvWrapper):
         state[5] = np.random.uniform(
             -0.1, 0.1
         )  # right_ankle (-45, 45)  = (-0.7854, 0.7854)
-        state[
-            6
-        ] = (
-            -hip_rot
-        )  # np.random.uniform(-0.3491, 1.) ## left_hip (-20, 100)   = (-0.3491, 1.7452)
+        state[6] = -hip_rot  # np.random.uniform(-0.3491, 1.) ## left_hip (-20, 100)   = (-0.3491, 1.7452)
         state[7] = np.random.uniform(-0.3, 0)  # left_knee (-150, 0)   = (-2.6178 , 0)
-        state[8] = np.random.uniform(
-            -0.1, 0.1
-        )  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
+        state[8] = np.random.uniform(-0.1, 0.1)  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
 
         # state[9:] = np.random.uniform(-0.04, 0.04, 9) ## Velocities
 
-        return state
+        return torch.tensor(state)
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]
         state = np.append(state, self.env.physics.torso_upright())  # Add torso upright
         state = np.append(state, self.env.physics.torso_height())  # Add torso height
-        state = np.append(
-            state, self.env.physics.horizontal_velocity()
-        )  # Add horizontal speed
-        return state
+        state = np.append(state, self.env.physics.horizontal_velocity())  # Add horizontal speed
+        return torch.tensor(state)
 
     def get_goal_weights(self):
         weights = super().goal_weights()
@@ -359,7 +352,7 @@ class Walker(EnvWrapper):
 class Hopper(EnvWrapper):
     state_dim = 14 - 1 + 4
 
-    def sample_state(self):
+    def sample_state(self) -> torch.Tensor:
         state_dim = 14
         state = np.zeros(state_dim)
         # state[0] = np.random.uniform() ## horizontal position
@@ -376,14 +369,14 @@ class Hopper(EnvWrapper):
 
         state[7:] = np.random.uniform(-0.01, 0.01, 7)  # Velocities
 
-        return state
+        return torch.tensor(state)
 
-    def get_state(self):
+    def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]  # Removed horizontal position
         state = np.append(state, self.env.physics.touch())  # Add touch sensors in feet
         state = np.append(state, self.env.physics.height())  # Add torso height
         state = np.append(state, self.env.physics.speed())  # Add horizontal speed
-        return state
+        return torch.tensor(state)
 
     def get_goal_weights(self):
         weights = super().goal_weights()
