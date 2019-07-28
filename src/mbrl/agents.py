@@ -21,6 +21,7 @@ class Agent:
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
         num_epochs_per_iteration: int,
+        batch_size: int,
     ):
         self.environment = environment
         self.planner = planner
@@ -32,6 +33,7 @@ class Agent:
         self.num_rollouts_per_iteration = num_rollouts_per_iteration
         self.num_train_iterations = num_train_iterations
         self.num_epochs_per_iteration = num_epochs_per_iteration
+        self.batch_size = batch_size
         self.dataset = TransitionsDataset(rollouts=[], transitions_capacity=100000)
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
@@ -47,7 +49,7 @@ class Agent:
     def train(self):
         self.add_rollouts()
         for iteration in range(self.num_train_iterations):
-            self.model.train(num_epochs=self.num_epochs_per_iteration)
+            self.model.train_model(dataset=self.dataset, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration)
             self.add_rollouts(get_action=self.get_action)
 
 

@@ -17,7 +17,9 @@ class Rollout:
         self._observations = observations
         self._actions = actions + [None]
         self._rewards = [None] + rewards
-        self._rollout = list(zip(self.rewards, self.states, self.observations, self.actions))
+        self._rollout = list(
+            zip(self.rewards, self.states, self.observations, self.actions)
+        )
         self._flat_roll = self._to_array()
 
     @property
@@ -40,10 +42,12 @@ class Rollout:
         return self._length
 
     def __getitem__(self, key):
-        return Rollout(states=self.states[key],
-                       observations=self.observations[key],
-                       actions=self.actions[key][:-1],
-                       rewards=self.rewards[key][1:])
+        return Rollout(
+            states=self.states[key],
+            observations=self.observations[key],
+            actions=self.actions[key][:-1],
+            rewards=self.rewards[key][1:],
+        )
 
     def __repr__(self):
         return str(self._rollout)
@@ -54,22 +58,28 @@ class Rollout:
         """
         assert idx < len(self)
 
-        inputs = self._flat_roll[4 * idx: 4 * idx + 3]
-        outputs = self._flat_roll[4 * idx + 3: 4 * idx + 6]
+        inputs = self._flat_roll[4 * idx : 4 * idx + 3]
+        outputs = self._flat_roll[4 * idx + 3 : 4 * idx + 6]
 
         if stats is not None:
-            inputs[0] = (inputs[0] - stats["states"]["mean"])/stats["states"]["std"]
+            inputs[0] = (inputs[0] - stats["states"]["mean"]) / stats["states"]["std"]
             normalised_obs = {}
             for k, v in inputs[1].items():
-                normalised_obs[k] = (v - stats["observations"][k]["mean"])/stats["observations"][k]["std"]
+                normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
+                    "observations"
+                ][k]["std"]
             inputs[1] = normalised_obs
             inputs[2] = (inputs[2] - stats["actions"]["mean"]) / stats["actions"]["std"]
 
-            outputs[0] = (outputs[0] - stats["rewards"]["mean"]) / stats["rewards"]["std"]
+            outputs[0] = (outputs[0] - stats["rewards"]["mean"]) / stats["rewards"][
+                "std"
+            ]
             outputs[1] = (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
             normalised_obs = {}
             for k, v in outputs[2].items():
-                normalised_obs[k] = (v - stats["observations"][k]["mean"])/stats["observations"][k]["std"]
+                normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
+                    "observations"
+                ][k]["std"]
             outputs[2] = normalised_obs
 
         return tuple(inputs), tuple(outputs)
@@ -94,16 +104,28 @@ class Rollout:
 
 
 class TransitionsDataset(Dataset):
-    def __init__(self, rollouts: List[Rollout], transitions_capacity: int = int(1e6), horizon: int = 1, normalise=True):
+    def __init__(
+        self,
+        rollouts: List[Rollout],
+        transitions_capacity: int = int(1e6),
+        horizon: int = 1,
+        normalise=True,
+    ):
         super().__init__()
         self.capacity = transitions_capacity
         self.horizon = horizon
         self._rollouts = []
         self._occupied_capacity = 0
-        self._stats = {"state": None, "observation": None, "action": None, "reward": None}
+        self._stats = {
+            "state": None,
+            "observation": None,
+            "action": None,
+            "reward": None,
+        }
         self._normalise = normalise
 
-        self.add_rollouts(rollouts)
+        if len(self._rollouts) > 0:
+            self.add_rollouts(rollouts)
 
     def add_rollouts(self, rollouts):
         for roll in rollouts:
@@ -150,7 +172,7 @@ class TransitionsDataset(Dataset):
         np.random.shuffle(possible_transitions)
 
         for trans in possible_transitions:
-            yield(self.get_transition(roll_idx=trans[0], start_idx=trans[1]))
+            yield (self.get_transition(roll_idx=trans[0], start_idx=trans[1]))
 
     def get_transition(self, roll_idx=None, start_idx=None):
         if roll_idx is None:
@@ -160,7 +182,9 @@ class TransitionsDataset(Dataset):
             start_idx = np.random.randint(0, len(rollout) - self.horizon)
 
         stats = self._stats if self._normalise else None
-        transition = rollout.get_multistep_transitions(start_idx, self.horizon, stats=stats)
+        transition = rollout.get_multistep_transitions(
+            start_idx, self.horizon, stats=stats
+        )
 
         return transition
 
@@ -171,7 +195,7 @@ class TransitionsDataset(Dataset):
         for r in self._rollouts:
             all_states.append(torch.stack(r.states))
             all_actions.append(torch.stack(r.actions[:-1]))  # Ignore last action
-            all_rewards.append(torch.stack(r.rewards[1:]))   # Ignore first reward
+            all_rewards.append(torch.stack(r.rewards[1:]))  # Ignore first reward
             for obs in r.observations:
                 for k, v in obs.items():
                     all_obs[k].append(v)
@@ -179,16 +203,20 @@ class TransitionsDataset(Dataset):
         stats["states"] = self._get_stats(torch.cat(all_states))
         stats["actions"] = self._get_stats(torch.cat(all_actions))
         stats["rewards"] = self._get_stats(torch.cat(all_rewards))
-        stats["observations"] = {k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()}
+        stats["observations"] = {
+            k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
+        }
 
         self._stats = stats
 
     @staticmethod
     def _get_stats(array):
-        return {"mean": torch.mean(array, dim=0),
-                "std": torch.std(array, dim=0),
-                "min": torch.min(array, dim=0),
-                "max": torch.max(array, dim=0)}
+        return {
+            "mean": torch.mean(array, dim=0),
+            "std": torch.std(array, dim=0),
+            "min": torch.min(array, dim=0),
+            "max": torch.max(array, dim=0),
+        }
 
 
 # -------------------------------------------------------------------------------------------

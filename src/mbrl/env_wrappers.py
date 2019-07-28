@@ -11,6 +11,7 @@ class EnvWrapper(environment.Base):
     def __init__(self, env):
         self._env = env
         self._state_penalty = 1.0
+        self.action_dim = env.action_spec().shape[0]
 
     @staticmethod
     def load(env_name, task_name, **kwargs):
@@ -95,7 +96,7 @@ class PointMass(EnvWrapper):
     state_dim = 4
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[0:2] = 10 * self._state_penalty
         weights[2:] = (
             self._state_penalty / 4.0
@@ -117,7 +118,7 @@ class Reacher(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
 
         weights[0:2] = self._state_penalty
 
@@ -172,7 +173,7 @@ class Cheetah(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[17] = self._state_penalty
         weights[18] = self._state_penalty / 2.0
         return weights
@@ -193,7 +194,7 @@ class Manipulator(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[8:10] = 10 * self._state_penalty
         weights[10:21] = self._state_penalty / 4
         weights[-7:-5] = 10 * self._state_penalty
@@ -314,7 +315,7 @@ class Humanoid(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[-5:] = 10 * self._state_penalty
         return weights
 
@@ -339,7 +340,7 @@ class Swimmer(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[0:1] = 10 * self._state_penalty  # Distance to target
         # weights[18] = self._state_penalty/2.
         weights[5:-2] = self._state_penalty  # velocities
@@ -384,7 +385,7 @@ class Walker(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[-3:] = self._state_penalty
         return weights
 
@@ -419,7 +420,7 @@ class Hopper(EnvWrapper):
         return torch.tensor(state)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().goal_weights()
+        weights = super().get_goal_weights()
         weights[-2] = self._state_penalty / 2.0
         weights[-1] = self._state_penalty
         return weights
