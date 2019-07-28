@@ -121,20 +121,6 @@ class GradientDescentPlanner(ModelPlanner):
         """
         Iteratively apply gradient descent to the trajectory w.r.t. actions selected in initial sequence
         """
-        # TODO This should really be the responsibility of some MPC controller
-        # if self.state_list is None:
-        #     print('Initialising nominal trajectory...')
-        #     self.state_list, self.action_list = self.initialise_trajectory()
-        # # ----------- Initialise next nominal trajectory with previous one shifted one timestep -----------
-        # else:
-        #     new_state_list, new_action_list = self.state_list[1:], self.action_list[1:]
-        #     # ----------- Get new random action, generate new last state ----------------------------------
-        #     new_action_list.append(torch.tensor(self.env.sample_action(), dtype=torch.float, requires_grad=True))
-        #     joint_state = torch.cat([new_state_list[-1], new_action_list[-1]])
-        #     next_state = self.model(joint_state)
-        #     new_state_list.append(next_state)
-        #     # ---------------------------------------------------------------------------------------------
-        #     self.state_list, self.action_list = new_state_list, new_action_list
         _, action_list = initial_trajectory
 
         for action in action_list:
