@@ -94,7 +94,7 @@ class EnvWrapper(environment.Base):
 class PointMass(EnvWrapper):
     state_dim = 4
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[0:2] = 10 * self._state_penalty
         weights[2:] = (
@@ -313,7 +313,7 @@ class Humanoid(EnvWrapper):
         )  # +2 velocity should be 0
         return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[-5:] = 10 * self._state_penalty
         return weights
@@ -338,7 +338,7 @@ class Swimmer(EnvWrapper):
         )  # Head orientation (2)
         return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[0:1] = 10 * self._state_penalty  # Distance to target
         # weights[18] = self._state_penalty/2.
@@ -383,7 +383,7 @@ class Walker(EnvWrapper):
         )  # Add horizontal speed
         return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[-3:] = self._state_penalty
         return weights
@@ -418,7 +418,7 @@ class Hopper(EnvWrapper):
         state = np.append(state, self.env.physics.speed())  # Add horizontal speed
         return torch.tensor(state)
 
-    def get_goal_weights(self):
+    def get_goal_weights(self) -> torch.Tensor:
         weights = super().goal_weights()
         weights[-2] = self._state_penalty / 2.0
         weights[-1] = self._state_penalty

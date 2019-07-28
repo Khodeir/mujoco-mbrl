@@ -6,11 +6,13 @@ import tqdm
 
 
 class DynamicsModel(nn.Module):
-    def train(self, dataset: TransitionsDataset, batch_size: int, num_epochs: int):
+    def train_model(
+        self, dataset: TransitionsDataset, batch_size: int, num_epochs: int
+    ):
         train_data = DataLoader(dataset, batch_size=batch_size, shuffle=True)
         for epoch in tqdm(range(num_epochs)):
             for trans in train_data:
-                loss = 0
+                loss = torch.tensor(0)
                 state = trans[0]
                 for j in range(0, len(trans) - 3, 3):
                     # state = trans[j]
