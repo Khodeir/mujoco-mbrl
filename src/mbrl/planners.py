@@ -166,7 +166,7 @@ class GradientDescentPlanner(ModelPlanner):
 
 
 class RandomShootingPlanner(ModelPlanner):
-    defaults = dict(num_trajectories=5)
+    defaults = dict(num_trajectories=1000)
 
     @staticmethod
     def plan(
@@ -241,13 +241,11 @@ class RandomShootingPlanner(ModelPlanner):
             )
             # infer with model
             state_action = torch.cat([states, actions], dim=1)
-
             state_list.append(states)
             action_list.append(actions)
             states = model(state_action)
             for i in range(num_trajectories):
                 costs[i] += state_cost(states[i]) + action_cost(actions[i])
-
         trajectories = []
         for trajectory_index in range(num_trajectories):
             s, a = [], []

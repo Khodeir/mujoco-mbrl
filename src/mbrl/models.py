@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from src.mbrl.data import TransitionsDataset, TransitionsSampler
+from src.mbrl.logger import logger
 
 class DynamicsModel(nn.Module):
     def forward(self, x, unnormalize=None):
@@ -10,31 +11,45 @@ class DynamicsModel(nn.Module):
             out = unnormalize(out)
 
         return out
+    def evaluate_model(self, dataset, batch_size, criterion=None):
+        if not criterion:
+            criterion = torch.nn.MSELoss()
+        eval_data = DataLoader(dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset))
+        evals = []
+        for inputs, outputs in eval_data:
+            for ((states, observations, actions), (rewards, next_states, next_observations)) in zip(inputs, outputs):
+                state_action = torch.cat([states, actions], 1)
+                next_states_hat = self.forward(state_action)
+                evals.append(criterion(next_states_hat, next_states).detach().numpy())
+        return evals
+
     def train_model(
-        self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int
+        self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int, criterion=None,
     ):
+        if not criterion:
+            criterion = torch.nn.MSELoss()
         train_data = DataLoader(dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset))
         for epoch in range(num_epochs):
-            for trans in train_data:
-                loss = torch.tensor(0.0, requires_grad=True)
-                state = trans[0]
-                for j in range(0, len(trans) - 3, 3):
-                    # state = trans[j]
-                    action = trans[j + 1]
-                    next_state = trans[j + 3]
-
-                    state_action = torch.cat([state, action], 1)
-                    next_state_hat = self.forward(state_action)
-                    if j == 0:
-                        single_loss = self.criterion(next_state_hat, next_state)
-
-                    loss += self.criterion(next_state_hat, next_state)
-                    # loss = self.criterion(next_state_hat, next_state) ### What if I only train on the last one?
-                    state = next_state_hat  # Use predicted next state in next iteration
+            epoch_loss = 0
+            num_iters = 0
+            for inputs, outputs in train_data:
+                loss = 0
+                for ((states, observations, actions), (rewards, next_states, next_observations)) in zip(inputs, outputs):
+                    state_action = torch.cat([states, actions], 1)
+                    next_states_hat = self.forward(state_action)
+                    loss = loss + criterion(next_states_hat, next_states)
 
                 optimizer.zero_grad()
                 loss.backward(retain_graph=True)
                 optimizer.step()
+                epoch_loss += loss
+                num_iters += 1
+
+            epoch_loss = float(epoch_loss.detach().numpy())
+            if epoch == 0:
+                logger.record_tabular("LossFirstEpoch", epoch_loss/num_iters)
+                logger.record_tabular("NumBatchesPerEpoch", num_iters)
+        logger.record_tabular("LossLastEpoch", epoch_loss/num_iters)
 
             # if self.writer is not None:
             #     self.writer.add_scalar('loss/state/{}'.format(iteration), loss, epoch)

@@ -7,7 +7,7 @@ from src.mbrl.models import DynamicsModel
 from functools import partial
 from typing import List
 import numpy as np
-from logger import logger
+from src.mbrl.logger import logger
 class Agent:
     def __init__(
         self,
@@ -42,13 +42,14 @@ class Agent:
         raise NotImplementedError
 
     def add_rollouts(self, get_action=None):
-        logger.info('Generating {} {} rollouts of {} length.'.format('policy' if get_action else 'random',self.num_rollouts_per_iteration, self.rollout_length))
+        logger.info('Generating {} {} rollouts of {} length.'.format(self.num_rollouts_per_iteration,'policy' if get_action else 'random', self.rollout_length))
         rollouts = [
             self.environment.get_rollout(self.rollout_length, get_action)
             for i in range(self.num_rollouts_per_iteration)
         ]
         self.dataset.add_rollouts(rollouts)
         logger.record_tabular('AvgSumRewardPerRollout', np.mean([sum(filter(bool, rollout.rewards)) for rollout in rollouts]))
+        logger.record_tabular('AvgSumCostPerRollout', np.mean([sum(map(self.state_cost, rollout.states)) for rollout in rollouts]))
 
     def train(self):
         logger.info('Starting outer training loop.')
@@ -70,6 +71,7 @@ class MPCAgent(Agent):
         self.last_trajectory = None
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
+        logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
