@@ -6,8 +6,6 @@ from dm_control import suite
 from dm_control.rl import environment
 from src.mbrl.data import Rollout
 
-import logging
-logger = logging.getLogger(__name__)
 class EnvWrapper(environment.Base):
     def __init__(self, env):
         self._env = env

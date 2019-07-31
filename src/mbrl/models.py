@@ -2,19 +2,20 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from src.mbrl.data import TransitionsDataset, TransitionsSampler
-from tqdm import tqdm
-import logging
-logger = logging.getLogger(__name__)
 
 class DynamicsModel(nn.Module):
+    def forward(self, x, unnormalize=None):
+        out = self._forward(x)
+        if unnormalize:
+            out = unnormalize(out)
+
+        return out
     def train_model(
         self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int
     ):
-        logger.info('Training model for {} epochs with batch_size {}'.format(num_epochs, batch_size))
         train_data = DataLoader(dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset))
-        for epoch in tqdm(range(num_epochs)):
+        for epoch in range(num_epochs):
             for trans in train_data:
-                logger.info('Training model for {} epochs with batch_size {}'.format(num_epochs, batch_size))
                 loss = torch.tensor(0.0, requires_grad=True)
                 state = trans[0]
                 for j in range(0, len(trans) - 3, 3):
@@ -50,12 +51,12 @@ class Model(DynamicsModel):
         self.activation_fn = nn.ReLU()
         self.noise = noise
 
-    def forward(self, x):
+    def _forward(self, x):
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))
         x = self.linear3(x)
-
         return x if self.noise is None else x + torch.randn_like(x) * self.noise
+
 
 
 class LinearModel(DynamicsModel):
@@ -64,7 +65,7 @@ class LinearModel(DynamicsModel):
         self.linear1 = nn.Linear(state_dim + action_dim, state_dim)
         self.noise = noise
 
-    def forward(self, x):
+    def _forward(self, x):
         x = self.linear1(x)
 
         return x if self.noise is None else x + torch.randn_like(x) * self.noise
@@ -79,7 +80,7 @@ class ModelWithReward(DynamicsModel):
         self.linear4 = nn.Linear(hidden_units, 1)
         self.activation_fn = nn.ReLU()
 
-    def forward(self, state, action):
+    def _forward(self, state, action):
         x = torch.cat((state, action), -1)
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))

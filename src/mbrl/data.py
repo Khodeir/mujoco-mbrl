@@ -201,6 +201,12 @@ class TransitionsDataset(Dataset):
 
         self._stats = stats
 
+    def unnormalize_state(self, state):
+        if not self._normalise:
+            return state
+        # (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
+        return (state * self._stats["states"]["std"]) +  self._stats["states"]["mean"]
+
     @staticmethod
     def _get_stats(array):
         return {

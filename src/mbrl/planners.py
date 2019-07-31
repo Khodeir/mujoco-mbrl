@@ -12,7 +12,6 @@ ScalarTorchFunc = Callable[[torch.Tensor], float]
 TensorTorchFunc = Callable[[torch.Tensor], torch.Tensor]
 TorchFunc = Callable[[], torch.Tensor]
 
-
 class ModelPlanner:
     @staticmethod
     def plan(
@@ -205,7 +204,6 @@ class RandomShootingPlanner(ModelPlanner):
         initial_trajectory: Optional[Trajectory],
         num_trajectories: int,
     ):
-
         trajectories, trajectory_costs = RandomShootingPlanner._generate_trajectories(
             initial_state=initial_state,
             num_trajectories=num_trajectories,
