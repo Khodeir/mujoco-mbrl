@@ -1,18 +1,21 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from src.mbrl.data import TransitionsDataset
-import tqdm
-
+from src.mbrl.data import TransitionsDataset, TransitionsSampler
+from tqdm import tqdm
+import logging
+logger = logging.getLogger(__name__)
 
 class DynamicsModel(nn.Module):
     def train_model(
-        self, dataset: TransitionsDataset, batch_size: int, num_epochs: int
+        self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int
     ):
-        train_data = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        logger.info('Training model for {} epochs with batch_size {}'.format(num_epochs, batch_size))
+        train_data = DataLoader(dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset))
         for epoch in tqdm(range(num_epochs)):
             for trans in train_data:
-                loss = torch.tensor(0)
+                logger.info('Training model for {} epochs with batch_size {}'.format(num_epochs, batch_size))
+                loss = torch.tensor(0.0, requires_grad=True)
                 state = trans[0]
                 for j in range(0, len(trans) - 3, 3):
                     # state = trans[j]
@@ -28,9 +31,9 @@ class DynamicsModel(nn.Module):
                     # loss = self.criterion(next_state_hat, next_state) ### What if I only train on the last one?
                     state = next_state_hat  # Use predicted next state in next iteration
 
-                self.optimizer.zero_grad()
+                optimizer.zero_grad()
                 loss.backward(retain_graph=True)
-                self.optimizer.step()
+                optimizer.step()
 
             # if self.writer is not None:
             #     self.writer.add_scalar('loss/state/{}'.format(iteration), loss, epoch)

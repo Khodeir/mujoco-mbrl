@@ -6,7 +6,8 @@ from dm_control import suite
 from dm_control.rl import environment
 from src.mbrl.data import Rollout
 
-
+import logging
+logger = logging.getLogger(__name__)
 class EnvWrapper(environment.Base):
     def __init__(self, env):
         self._env = env
@@ -26,7 +27,7 @@ class EnvWrapper(environment.Base):
     def get_state(self) -> torch.Tensor:
         # TODO: Do something about the fact that get_state has a potentially
         # different dimension than sample_state
-        return torch.tensor(self._env.physics.state())
+        return torch.tensor(self._env.physics.state(), dtype=torch.float32)
 
     def sample_state(self) -> torch.Tensor:
         raise NotImplementedError
@@ -38,7 +39,7 @@ class EnvWrapper(environment.Base):
         )  # Clipping because LQR task has INF bounds
         maximum = min(action_spec.maximum[0], 3)
         action = np.random.uniform(minimum, maximum, action_spec.shape[0])
-        return torch.tensor(action)
+        return torch.tensor(action, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = torch.zeros(self.state_dim)
@@ -57,8 +58,8 @@ class EnvWrapper(environment.Base):
         self, action: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor]]:
         t = self._env.step(np.array(action))
-        obs = {str(k): torch.tensor(v) for k, v in t.observation.items()}
-        reward = torch.tensor(t.reward) if t.reward is not None else None
+        obs = {str(k): torch.tensor(v, dtype=torch.float32) for k, v in t.observation.items()}
+        reward = torch.tensor(t.reward, dtype=torch.float32) if t.reward is not None else None
         return self.get_state(), obs, reward
 
     def get_rollout(
@@ -115,7 +116,7 @@ class Reacher(EnvWrapper):
         state[2] = np.random.uniform(low=-3, high=3)
         state[3] = np.random.uniform(low=-3, high=3)
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -162,7 +163,7 @@ class Cheetah(EnvWrapper):
         )  # ffoot (-28, 28) = (-0.4887, 0.4887)
         state[9:] = np.random.uniform(-3, 3, 9)  # Velocities
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]
@@ -170,7 +171,7 @@ class Cheetah(EnvWrapper):
         state = np.append(
             state, self._env.physics.named.data.subtree_com["torso"][2]
         )  # Add torso height
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -191,7 +192,7 @@ class Manipulator(EnvWrapper):
             state, self._env.physics.named.data.site_xpos["grasp", "z"]
         )  # gripper position
         state = np.append(state, self._env.physics.touch())  # Sensors. 5 dimensions
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -280,12 +281,12 @@ class Humanoid(EnvWrapper):
 
         # state[34:] = 0.1*np.random.uniform(-0.1, 0.1, 21)  # Velocities
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def sample_action(self) -> torch.Tensor:
         action = np.random.normal(0, 0.4, self.action_dim)
         action[3:-6] = 0.0
-        return torch.tensor(action)
+        return torch.tensor(action, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()  # 55 (pure state)
@@ -312,7 +313,7 @@ class Humanoid(EnvWrapper):
         state = np.append(
             state, self.env.physics.center_of_mass_velocity()[:2]
         )  # +2 velocity should be 0
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -330,14 +331,14 @@ class Swimmer(EnvWrapper):
 
         state[2] = np.random.uniform(low=-3, high=3)
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()  # 16-2 dims
         state = np.append(
             state, self.env.physics.named.data.xmat["head"][:2]
         )  # Head orientation (2)
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -373,7 +374,7 @@ class Walker(EnvWrapper):
 
         # state[9:] = np.random.uniform(-0.04, 0.04, 9) ## Velocities
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]
@@ -382,7 +383,7 @@ class Walker(EnvWrapper):
         state = np.append(
             state, self.env.physics.horizontal_velocity()
         )  # Add horizontal speed
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -410,14 +411,14 @@ class Hopper(EnvWrapper):
 
         state[7:] = np.random.uniform(-0.01, 0.01, 7)  # Velocities
 
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()[1:]  # Removed horizontal position
         state = np.append(state, self.env.physics.touch())  # Add touch sensors in feet
         state = np.append(state, self.env.physics.height())  # Add torso height
         state = np.append(state, self.env.physics.speed())  # Add horizontal speed
-        return torch.tensor(state)
+        return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()

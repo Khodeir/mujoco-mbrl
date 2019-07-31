@@ -1,7 +1,7 @@
 from typing import List
 from collections import defaultdict
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 import numpy as np
 
 
@@ -102,7 +102,6 @@ class Rollout:
 
         return rollout[1:-1]
 
-
 class TransitionsDataset(Dataset):
     def __init__(
         self,
@@ -164,15 +163,8 @@ class TransitionsDataset(Dataset):
     def __len__(self):
         return self._occupied_capacity
 
-    def __iter__(self):
-        possible_transitions = []
-        for roll_idx, roll in enumerate(self._rollouts):
-            for start_idx in range(len(roll) - self.horizon):
-                possible_transitions.append((roll_idx, start_idx))
-        np.random.shuffle(possible_transitions)
-
-        for trans in possible_transitions:
-            yield (self.get_transition(roll_idx=trans[0], start_idx=trans[1]))
+    def __getitem__(self, trans):
+        return self.get_transition(roll_idx=trans[0], start_idx=trans[1])
 
     def get_transition(self, roll_idx=None, start_idx=None):
         if roll_idx is None:
@@ -218,6 +210,18 @@ class TransitionsDataset(Dataset):
             "max": torch.max(array, dim=0),
         }
 
+class TransitionsSampler(Sampler):
+    def __init__(self, data_source: TransitionsDataset):
+        self.data_source = data_source
+    def __iter__(self):
+        possible_transitions = []
+        for roll_idx, roll in enumerate(self.data_source._rollouts):
+            for start_idx in range(len(roll) - self.data_source.horizon):
+                possible_transitions.append((roll_idx, start_idx))
+        np.random.shuffle(possible_transitions)
+
+        for trans in possible_transitions:
+            yield trans
 
 # -------------------------------------------------------------------------------------------
 # Some things for testing

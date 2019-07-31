@@ -6,7 +6,8 @@ from src.mbrl.planners import ModelPlanner, ScalarTorchFunc
 from src.mbrl.models import DynamicsModel
 
 from typing import List
-
+import logging
+logger = logging.getLogger(__name__)
 
 class Agent:
     def __init__(
@@ -17,6 +18,7 @@ class Agent:
         horizon: int,
         action_cost: ScalarTorchFunc,
         state_cost: ScalarTorchFunc,
+        optimizer: torch.optim.Optimizer,
         rollout_length: int,
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
@@ -34,12 +36,14 @@ class Agent:
         self.num_train_iterations = num_train_iterations
         self.num_epochs_per_iteration = num_epochs_per_iteration
         self.batch_size = batch_size
+        self.optimizer = optimizer
         self.dataset = TransitionsDataset(rollouts=[], transitions_capacity=100000)
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def add_rollouts(self, get_action=None):
+        logger.info('Generating {} {} rollouts of {} length.'.format('policy' if get_action else 'random',self.num_rollouts_per_iteration, self.rollout_length))
         rollouts = [
             self.environment.get_rollout(self.rollout_length, get_action)
             for i in range(self.num_rollouts_per_iteration)
@@ -47,9 +51,10 @@ class Agent:
         self.dataset.add_rollouts(rollouts)
 
     def train(self):
+        logger.info('Starting outer training loop.')
         self.add_rollouts()
         for iteration in range(self.num_train_iterations):
-            self.model.train_model(dataset=self.dataset, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration)
+            self.model.train_model(dataset=self.dataset, optimizer=self.optimizer, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration)
             self.add_rollouts(get_action=self.get_action)
 
 

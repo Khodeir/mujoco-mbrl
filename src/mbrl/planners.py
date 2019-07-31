@@ -133,7 +133,7 @@ class GradientDescentPlanner(ModelPlanner):
             traj_optimizer.zero_grad()
             # run model forward from init state, accumulate losses
             state_list = [initial_state]  # a list of torch tensors
-            loss = torch.tensor(0)
+            loss = torch.tensor(0.0, requires_grad=True)
             # Loop forwards, accumulate costs
             for i in range(horizon):
                 joint_state = torch.cat([state_list[-1], action_list[i]])
@@ -167,7 +167,7 @@ class GradientDescentPlanner(ModelPlanner):
 
 
 class RandomShootingPlanner(ModelPlanner):
-    defaults = dict(num_trajectories=100)
+    defaults = dict(num_trajectories=5)
 
     @staticmethod
     def plan(
