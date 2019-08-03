@@ -228,35 +228,25 @@ class RandomShootingPlanner(ModelPlanner):
         horizon: int,
         num_trajectories: int,
     ) -> Tuple[List[Trajectory], np.ndarray]:
-        states = initial_state.unsqueeze(dim=0).repeat_interleave(
-            num_trajectories, dim=0
-        )  # matrix size num_trajectories * state_dimensions, each row is the state
-        state_list = []
-        action_list = []
-        costs = np.zeros(num_trajectories)
-        for _ in range(horizon):
-            # sample actions
-            actions = torch.cat(
-                [sample_action().unsqueeze(dim=0) for _ in range(num_trajectories)]
-            )
+
+        state_list = torch.zeros((num_trajectories * horizon, initial_state.shape[0]))
+        action_list = sample_action(batch_size=num_trajectories * horizon)
+
+        for i in range(horizon):
+            if i == 0:
+                states = initial_state.unsqueeze(dim=0).repeat_interleave(num_trajectories, dim=0)
+            else:
+                states = state_list[i * num_trajectories : (i + 1) * num_trajectories]
+            actions = action_list[i * num_trajectories : (i + 1) * num_trajectories]
             # infer with model
             state_action = torch.cat([states, actions], dim=1)
-            state_list.append(states)
-            action_list.append(actions)
-            states = model(state_action)
-        costs = torch.reshape(
-            state_cost(torch.reshape(torch.stack(state_list), (num_trajectories * horizon, -1))) \
-                + action_cost(torch.reshape(torch.stack(action_list), (num_trajectories * horizon, -1))),
-            (num_trajectories, horizon)
-        ).sum(dim=1).detach().numpy()
+            state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(state_action)
+        costs = (state_cost(state_list) + action_cost(action_list)).view(horizon, num_trajectories).sum(0).detach().numpy()
 
         trajectories = []
-        for trajectory_index in range(num_trajectories):
-            s, a = [], []
-            for timestep in range(horizon):
-                s.append(state_list[timestep][trajectory_index])
-                a.append(action_list[timestep][trajectory_index])
-            trajectories.append((s, a))
-
+        state_list = state_list.view((horizon, num_trajectories, -1))
+        action_list = action_list.view((horizon, num_trajectories, -1))
+        for i in range(num_trajectories):
+            trajectories.append((state_list[:, i], action_list[:, i]))
         return trajectories, costs
 

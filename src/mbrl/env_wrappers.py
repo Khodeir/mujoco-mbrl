@@ -31,13 +31,16 @@ class EnvWrapper(environment.Base):
     def sample_state(self) -> torch.Tensor:
         raise NotImplementedError
 
-    def sample_action(self) -> torch.Tensor:
+    def sample_action(self, batch_size=None) -> torch.Tensor:
         action_spec = self.action_spec()
         minimum = max(
             action_spec.minimum[0], -3
         )  # Clipping because LQR task has INF bounds
         maximum = min(action_spec.maximum[0], 3)
-        action = np.random.uniform(minimum, maximum, action_spec.shape[0])
+        if batch_size is None:
+            action = np.random.uniform(minimum, maximum, action_spec.shape[0])
+        else:
+            action = np.random.uniform(minimum, maximum, size=action_spec.shape[0] * batch_size).reshape((batch_size, -1))
         return torch.tensor(action, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
@@ -282,9 +285,13 @@ class Humanoid(EnvWrapper):
 
         return torch.tensor(state, dtype=torch.float32)
 
-    def sample_action(self) -> torch.Tensor:
-        action = np.random.normal(0, 0.4, self.action_dim)
-        action[3:-6] = 0.0
+    def sample_action(self, batch_size=None) -> torch.Tensor:
+        if batch_size is None:
+            action = np.random.normal(0, 0.4, self.action_dim)
+            action[3:-6] = 0.0
+        else:
+            action = np.random.normal(0, 0.4, self.action_dim * batch_size).reshape((batch_size, -1))
+            action[:, 3:-6] = 0.0
         return torch.tensor(action, dtype=torch.float32)
 
     def get_state(self) -> torch.Tensor:
