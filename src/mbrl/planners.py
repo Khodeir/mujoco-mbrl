@@ -244,8 +244,12 @@ class RandomShootingPlanner(ModelPlanner):
             state_list.append(states)
             action_list.append(actions)
             states = model(state_action)
-            for i in range(num_trajectories):
-                costs[i] += state_cost(states[i]) + action_cost(actions[i])
+        costs = torch.reshape(
+            state_cost(torch.reshape(torch.stack(state_list), (num_trajectories * horizon, -1))) \
+                + action_cost(torch.reshape(torch.stack(action_list), (num_trajectories * horizon, -1))),
+            (num_trajectories, horizon)
+        ).sum(dim=1).detach().numpy()
+
         trajectories = []
         for trajectory_index in range(num_trajectories):
             s, a = [], []

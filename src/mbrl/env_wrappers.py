@@ -11,6 +11,7 @@ class EnvWrapper(environment.Base):
         self._env = env
         self._state_penalty = 1.0
         self.action_dim = env.action_spec().shape[0]
+        self._action_spec = env.action_spec()
 
     @staticmethod
     def load(env_name, task_name, **kwargs):
@@ -50,7 +51,7 @@ class EnvWrapper(environment.Base):
         return self._env.observation_spec()
 
     def action_spec(self):
-        return self._env.action_spec()
+        return self._action_spec
 
     def step(
         self, action: torch.Tensor

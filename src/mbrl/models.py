@@ -136,7 +136,8 @@ class SmoothAbsLoss(nn.Module):
     def forward(self, x):
         x = x - self.goalState
         return torch.sum(
-            torch.sqrt((x * self.weights) ** 2 + self.alpha ** 2) - self.alpha
+            torch.sqrt((x * self.weights) ** 2 + self.alpha ** 2) - self.alpha,
+            dim=-1
         )
 
 
@@ -150,7 +151,7 @@ class CoshLoss(nn.Module):
         self.alpha = alpha
 
     def forward(self, x):
-        return (self.alpha ** 2) * torch.mean(torch.cosh(x / self.alpha) - 1)
+        return (self.alpha ** 2) * torch.mean(torch.cosh(x / self.alpha) - 1, dim=-1)
 
 
 class QuadraticCost(nn.Module):
