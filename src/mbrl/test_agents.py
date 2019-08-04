@@ -1,6 +1,6 @@
 from src.mbrl.logger import logger
 import os
-exp_dir = 'test_agents_exp'
+exp_dir = 'test_agents_derp'
 logger.setup(exp_dir, os.path.join(exp_dir, 'log.txt'), 'debug')
 
 from src.mbrl.agents import *
@@ -21,27 +21,13 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate, weight_decay=l2_
 action_cost = CoshLoss()
 
 import numpy as np
-goal_state = torch.zeros(environment.state_dim, dtype=torch.float)
-goal_state[0] = np.random.uniform(low=-np.pi, high=np.pi)
-goal_state[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
-goal_state[-1] = 0
-goal_state[-2] = 0
-
-a = 0.12*np.cos(goal_state[1])
-b = 0.12*np.sin(goal_state[1])
-theta = goal_state[0] + np.arctan(b/(0.12 + a))
-mag = np.sqrt((0.12 + a)**2 + b**2)
-target_x = mag*np.cos(theta)
-target_y = mag*np.sin(theta)
-environment._env.physics.named.model.geom_pos['target', 'x'] = target_x
-environment._env.physics.named.model.geom_pos['target', 'y'] = target_y
-
+goal_state = environment.set_goal()
 state_cost = SmoothAbsLoss(weights=environment.get_goal_weights(), goal_state=goal_state)
 
 horizon = 20
 rollout_length = 250
 num_rollouts_per_iteration = 10
-num_train_iterations = 100
+num_train_iterations = 10
 num_epochs_per_iteration = 10
 batch_size = 50
 

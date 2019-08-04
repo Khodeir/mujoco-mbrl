@@ -6,6 +6,7 @@ from dm_control import suite
 from dm_control.rl import environment
 from src.mbrl.data import Rollout
 
+
 class EnvWrapper(environment.Base):
     def __init__(self, env):
         self._env = env
@@ -31,6 +32,9 @@ class EnvWrapper(environment.Base):
     def sample_state(self) -> torch.Tensor:
         raise NotImplementedError
 
+    def set_goal(self) -> torch.Tensor:
+        raise NotImplementedError
+
     def sample_action(self, batch_size=None) -> torch.Tensor:
         action_spec = self.action_spec()
         minimum = max(
@@ -40,7 +44,9 @@ class EnvWrapper(environment.Base):
         if batch_size is None:
             action = np.random.uniform(minimum, maximum, action_spec.shape[0])
         else:
-            action = np.random.uniform(minimum, maximum, size=action_spec.shape[0] * batch_size).reshape((batch_size, -1))
+            action = np.random.uniform(
+                minimum, maximum, size=action_spec.shape[0] * batch_size
+            ).reshape((batch_size, -1))
         return torch.tensor(action, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
@@ -60,8 +66,15 @@ class EnvWrapper(environment.Base):
         self, action: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor]]:
         t = self._env.step(np.array(action))
-        obs = {str(k): torch.tensor(v, dtype=torch.float32) for k, v in t.observation.items()}
-        reward = torch.tensor(t.reward, dtype=torch.float32) if t.reward is not None else None
+        obs = {
+            str(k): torch.tensor(v, dtype=torch.float32)
+            for k, v in t.observation.items()
+        }
+        reward = (
+            torch.tensor(t.reward, dtype=torch.float32)
+            if t.reward is not None
+            else None
+        )
         return self.get_state(), obs, reward
 
     def get_rollout(
@@ -110,6 +123,15 @@ class PointMass(EnvWrapper):
         )  # Penalties on the velocities act as dampers
         return weights
 
+    def set_goal(self) -> torch.Tensor:
+        target = np.random.uniform(-0.25, 0.25, 3)
+        target[-1] = 0.01
+        self._env.physics.named.model.geom_pos["target"] = target
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        goal_state[0] = target[0]
+        goal_state[1] = target[1]
+        return goal_state
+
 
 class Reacher(EnvWrapper):
     state_dim = 4
@@ -133,6 +155,23 @@ class Reacher(EnvWrapper):
             self._state_penalty / 20.0
         )  # Penalties on the velocities act as dampers
         return weights
+
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        goal_state[0] = np.random.uniform(low=-np.pi, high=np.pi)
+        goal_state[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
+        goal_state[-1] = 0
+        goal_state[-2] = 0
+
+        a = 0.12 * np.cos(goal_state[1])
+        b = 0.12 * np.sin(goal_state[1])
+        theta = goal_state[0] + np.arctan(b / (0.12 + a))
+        mag = np.sqrt((0.12 + a) ** 2 + b ** 2)
+        target_x = mag * np.cos(theta)
+        target_y = mag * np.sin(theta)
+        self._env.physics.named.model.geom_pos["target", "x"] = target_x
+        self._env.physics.named.model.geom_pos["target", "y"] = target_y
+        return goal_state
 
 
 class Cheetah(EnvWrapper):
@@ -185,6 +224,12 @@ class Cheetah(EnvWrapper):
         weights[18] = self._state_penalty / 2.0
         return weights
 
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        goal_state[-2] = 2  # Target Speed
+        goal_state[-1] = 0.4  # Target torso height
+        return goal_state
+
 
 class Manipulator(EnvWrapper):
     state_dim = 22 + 7
@@ -207,6 +252,18 @@ class Manipulator(EnvWrapper):
         weights[-7:-5] = 10 * self._state_penalty
         weights[-5:] = self._state_penalty / 20
         return weights
+
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        target_ball = self._env.physics.body_location("target_ball")[:2]
+        # Want the ball to be over the target
+        goal_state[8] = target_ball[0]
+        goal_state[9] = target_ball[1]
+        # Want the gripper location to be at the target
+        goal_state[-7] = target_ball[0]
+        goal_state[-6] = target_ball[1]
+        goal_state[-5:] = 0.5  # Contact sensors
+        return goal_state
 
 
 class Humanoid(EnvWrapper):
@@ -294,7 +351,9 @@ class Humanoid(EnvWrapper):
             action = np.random.normal(0, 0.4, self.action_dim)
             action[3:-6] = 0.0
         else:
-            action = np.random.normal(0, 0.4, self.action_dim * batch_size).reshape((batch_size, -1))
+            action = np.random.normal(0, 0.4, self.action_dim * batch_size).reshape(
+                (batch_size, -1)
+            )
             action[:, 3:-6] = 0.0
         return torch.tensor(action, dtype=torch.float32)
 
@@ -330,6 +389,10 @@ class Humanoid(EnvWrapper):
         weights[-5:] = 10 * self._state_penalty
         return weights
 
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        return goal_state
+
 
 class Swimmer(EnvWrapper):
     state_dim = 10 + 2
@@ -357,6 +420,13 @@ class Swimmer(EnvWrapper):
         weights[5:-2] = self._state_penalty  # velocities
         # weights[8:-2] = self._state_penalty/4. ## velocities
         return weights
+
+    def set_goal(self) -> torch.Tensor:
+        target = self._env.physics.named.data.geom_xpos["target"][:2]
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        goal_state[0] = target[0]
+        goal_state[1] = target[1]
+        return goal_state
 
 
 class Walker(EnvWrapper):
@@ -400,6 +470,13 @@ class Walker(EnvWrapper):
         weights[-3:] = self._state_penalty
         return weights
 
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float)
+        goal_state[-3] = 1.0  # target torso_upright
+        goal_state[-2] = 1.3  # target torso_height
+        goal_state[-1] = 3.0  # 0.  ## target speed
+        return goal_state
+
 
 class Hopper(EnvWrapper):
     state_dim = 14 - 1 + 4
@@ -435,3 +512,10 @@ class Hopper(EnvWrapper):
         weights[-2] = self._state_penalty / 2.0
         weights[-1] = self._state_penalty
         return weights
+
+    def set_goal(self) -> torch.Tensor:
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float)
+        goal_state[-2] = 0.9  ## target torso_height
+        goal_state[-1] = 1.0  ##  ## target speed
+        return goal_state
+
