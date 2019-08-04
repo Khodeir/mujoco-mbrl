@@ -119,45 +119,28 @@ class GradientDescentPlanner(ModelPlanner):
         Iteratively apply gradient descent to the trajectory w.r.t. actions selected in initial sequence
         """
         _, action_list = initial_trajectory
-
-        for action in action_list:
-            action.requires_grad = True
-        initial_state.requires_grad = False
-
-        traj_optimizer = torch.optim.Adam(action_list, lr=0.01)
+        states_tensor = torch.zeros((horizon + 1, initial_state.shape[-1]))
+        states_tensor[0] = initial_state
+        actions_tensor = torch.cat(action_list, dim=0)
+        actions_tensor.requires_grad = True
+        traj_optimizer = torch.optim.Adam([actions_tensor], lr=0.01)
 
         for _ in range(num_iterations):
-            traj_optimizer.zero_grad()
-            # run model forward from init state, accumulate losses
-            state_list = [initial_state.unsqueeze(dim=0)]  # a list of torch tensors
+            traj_optimizer.zero_grad()            
             # Loop forwards, accumulate costs
             for i in range(horizon):
-                next_state = model(state_list[-1], action_list[i])
-                state_list.append(next_state)
-            loss = torch.sum(state_cost(torch.stack(state_list[1:])) + action_cost(torch.stack(action_list)))
-            # Backprop losses to actions
+                states_tensor[i+1] = model(states_tensor[i:i+1], actions_tensor[i:i+1])
+            loss = torch.sum(state_cost(states_tensor[1:]) + action_cost(actions_tensor))
             loss.backward(retain_graph=True)
+            old_actions_tensor = actions_tensor.clone().detach()
             # Update actions
-            old_actions = copy.deepcopy(action_list)
-            # -------------------------------- NEW --------------------------------------------
-            # if iteration == 0:
-            #     grad_norms = torch.tensor([u.grad.norm() for u in self.UList])
-            #     print('First grad norms of actions = ', grad_norms)
-            # ---------------------------------------------------------------------------------
             traj_optimizer.step()
-            new_actions = action_list[:]
 
-            change_amount = 0.0
-            for j in range(horizon):
-                change_amount += torch.mean(
-                    torch.abs(new_actions[j] - old_actions[j])
-                ).detach().numpy()
-            change_amount /= horizon
-
+            change_amount = torch.mean(torch.abs(old_actions_tensor - actions_tensor)).detach().numpy()
             if change_amount < stop_condition:
                 break
 
-        return state_list, [a.detach() for a in action_list]
+        return [s.detach() for s in states_tensor.split(1, 0)], [a.detach() for a in actions_tensor.split(1, 0)]
 
 
 class RandomShootingPlanner(ModelPlanner):
