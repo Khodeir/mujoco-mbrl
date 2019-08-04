@@ -6,8 +6,8 @@ logger.setup(exp_dir, os.path.join(exp_dir, 'log.txt'), 'debug')
 from src.mbrl.agents import *
 environment = EnvWrapper.load('reacher', 'easy', visualize_reward=True)
 
-from src.mbrl.planners import RandomShootingPlanner
-planner = RandomShootingPlanner
+from src.mbrl.planners import GradientDescentPlanner
+planner = GradientDescentPlanner
 from src.mbrl.models import Model, CoshLoss, SmoothAbsLoss
 from tensorboardX import SummaryWriter
 
@@ -25,9 +25,9 @@ goal_state = environment.set_goal()
 state_cost = SmoothAbsLoss(weights=environment.get_goal_weights(), goal_state=goal_state)
 
 horizon = 20
-rollout_length = 250
-num_rollouts_per_iteration = 10
-num_train_iterations = 10
+rollout_length = 100
+num_rollouts_per_iteration = 5
+num_train_iterations = 5
 num_epochs_per_iteration = 10
 batch_size = 50
 

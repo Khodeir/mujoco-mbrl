@@ -77,7 +77,7 @@ class MPCAgent(Agent):
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
-                self.last_trajectory[1][1:],
+                self.last_trajectory[1][0:],
             )
         else:
             initial_trajectory = None

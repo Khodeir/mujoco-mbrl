@@ -96,9 +96,8 @@ class GradientDescentPlanner(ModelPlanner):
         """
         Initialises some nominal sequence to start the trajectory optimisation with. Both sequences are normalised.
         """
-        state_list = [initial_state]  # a list of torch tensors
-        action_list = [sample_action() for _ in range(horizon)]
-
+        state_list = [initial_state.unsqueeze(dim=0)]  # a list of torch tensors
+        action_list = list(sample_action(batch_size=horizon).split(1, dim=0))
         for i in range(horizon):
             next_state = model(state_list[-1], action_list[i])
             state_list.append(next_state)
@@ -130,13 +129,12 @@ class GradientDescentPlanner(ModelPlanner):
         for _ in range(num_iterations):
             traj_optimizer.zero_grad()
             # run model forward from init state, accumulate losses
-            state_list = [initial_state]  # a list of torch tensors
-            loss = torch.tensor(0.0, requires_grad=True)
+            state_list = [initial_state.unsqueeze(dim=0)]  # a list of torch tensors
             # Loop forwards, accumulate costs
             for i in range(horizon):
                 next_state = model(state_list[-1], action_list[i])
                 state_list.append(next_state)
-                loss += state_cost(next_state) + action_cost(action_list[i])
+            loss = torch.sum(state_cost(torch.stack(state_list[1:])) + action_cost(torch.stack(action_list)))
             # Backprop losses to actions
             loss.backward(retain_graph=True)
             # Update actions
@@ -153,14 +151,13 @@ class GradientDescentPlanner(ModelPlanner):
             for j in range(horizon):
                 change_amount += torch.mean(
                     torch.abs(new_actions[j] - old_actions[j])
-                ).numpy()
+                ).detach().numpy()
             change_amount /= horizon
 
             if change_amount < stop_condition:
                 break
 
-        print("Initialised nominal trajectories...")
-        return state_list, action_list
+        return state_list, [a.detach() for a in action_list]
 
 
 class RandomShootingPlanner(ModelPlanner):
