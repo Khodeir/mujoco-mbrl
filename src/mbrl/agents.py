@@ -8,6 +8,8 @@ from functools import partial
 from typing import List
 import numpy as np
 from src.mbrl.logger import logger
+from tensorboardX import SummaryWriter
+
 class Agent:
     def __init__(
         self,
@@ -22,6 +24,7 @@ class Agent:
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
         num_epochs_per_iteration: int,
+        writer: SummaryWriter,
         batch_size: int,
     ):
         self.environment = environment
@@ -37,37 +40,34 @@ class Agent:
         self.batch_size = batch_size
         self.optimizer = optimizer
         self.dataset = TransitionsDataset(rollouts=[], transitions_capacity=100000)
-
+        self.writer = writer or SummaryWriter()
+        self.train_iterations = 0
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def add_rollouts(self, get_action=None):
-        logger.info('Generating {} {} rollouts of {} length.'.format(self.num_rollouts_per_iteration,'policy' if get_action else 'random', self.rollout_length))
+        rollout_type = 'policy' if get_action else 'random'
+        logger.info('Generating {} {} rollouts of {} length.'.format(self.num_rollouts_per_iteration, rollout_type, self.rollout_length))
         rollouts = [
             self.environment.get_rollout(self.rollout_length, get_action)
             for i in range(self.num_rollouts_per_iteration)
         ]
         self.dataset.add_rollouts(rollouts)
-        # logger.record_tabular('AvgSumRewardPerRollout', np.mean([sum(filter(bool, rollout.rewards)) for rollout in rollouts]))
-        # logger.record_tabular('AvgSumCostPerRollout', np.mean([sum(map(self.state_cost, rollout.states)) for rollout in rollouts]))
+        self.writer.add_scalar('AvgRolloutRewards/{}'.format(rollout_type), np.mean([rollout.sum_of_rewards for rollout in rollouts]), self.train_iterations)
+        self.writer.add_scalar('AvgRolloutStateCosts/{}'.format(rollout_type), np.mean([rollout.get_sum_of_state_costs(self.state_cost) for rollout in rollouts]), self.train_iterations)
+        self.writer.add_scalar('AvgRolloutActionCosts/{}'.format(rollout_type), np.mean([rollout.get_sum_of_action_costs(self.action_cost) for rollout in rollouts]), self.train_iterations)
 
     def train(self):
         logger.info('Starting outer training loop.')
-        # logger.record_tabular('Itr', 0)
-        for _ in range(10):
-            self.add_rollouts()
+        self.add_rollouts()
         logger.dump_tabular()
         for iteration in range(1, self.num_train_iterations + 1):
-            # logger.record_tabular('Itr', iteration)
             logger.debug('Iteration {}'.format(iteration))
             logger.debug('Training model with batch size {} for {} epochs'.format(self.batch_size, self.num_epochs_per_iteration))
-            self.model.train_model(dataset=self.dataset, optimizer=self.optimizer, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration)
+            self.train_iterations = iteration
+            self.model.train_model(dataset=self.dataset, optimizer=self.optimizer, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration, writer=self.writer)
             self.add_rollouts(get_action=self.get_action)
-            # logger.dump_tabular()
-def compose(f, g):
-    def wrap(*args, **kwargs):
-        return g(f(*args, **kwargs))
-    return wrap
+
 class MPCAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -83,11 +83,11 @@ class MPCAgent(Agent):
         else:
             initial_trajectory = None
         self.last_trajectory = self.planner.plan(
-            initial_state=self.dataset.normalize_state(state),
-            model=partial(self.model, unnormalize=self.dataset.unnormalize_state),
+            initial_state=state,
+            model=partial(self.model, normalize_state=self.dataset.normalize_state, normalize_action=self.dataset.normalize_action, unnormalize=self.dataset.unnormalize_state),
             state_cost=self.state_cost,
             action_cost=self.action_cost,
-            sample_action=compose(self.environment.sample_action, self.dataset.normalize_action),
+            sample_action=self.environment.sample_action,
             horizon=self.horizon,
             initial_trajectory=initial_trajectory,
         )

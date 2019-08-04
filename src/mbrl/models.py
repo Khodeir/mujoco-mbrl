@@ -8,8 +8,12 @@ class DynamicsModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.train_iterations = 0
-        self.writer = None
-    def forward(self, x, unnormalize=None):
+    def forward(self, state, action, normalize_action=None, normalize_state=None, unnormalize=None):
+        if normalize_action:
+            action = normalize_action(action)
+        if normalize_state:
+            state = normalize_state(state)
+        x = torch.cat([state, action], dim=1)
         out = self._forward(x)
         if unnormalize:
             out = unnormalize(out)
@@ -22,13 +26,12 @@ class DynamicsModel(nn.Module):
         evals = []
         for inputs, outputs in eval_data:
             for ((states, observations, actions), (rewards, next_states, next_observations)) in zip(inputs, outputs):
-                state_action = torch.cat([states, actions], 1)
-                next_states_hat = self.forward(state_action)
+                next_states_hat = self.forward(states, actions, normalize_action=None, normalize_state=None, unnormalize=None)
                 evals.append(criterion(next_states_hat, next_states).detach().numpy())
         return evals
 
     def train_model(
-        self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int, criterion=None,
+        self, dataset: TransitionsDataset, optimizer: torch.optim.Optimizer, batch_size: int, num_epochs: int, criterion=None, writer=None
     ):
         if not criterion:
             criterion = torch.nn.MSELoss()
@@ -38,8 +41,7 @@ class DynamicsModel(nn.Module):
             for inputs, outputs in train_data:
                 loss = 0
                 for ((states, observations, actions), (rewards, next_states, next_observations)) in zip(inputs, outputs):
-                    state_action = torch.cat([states, actions], 1)
-                    next_states_hat = self.forward(state_action)
+                    next_states_hat = self.forward(states, actions, normalize_action=None, normalize_state=None, unnormalize=None)
                     loss = loss + criterion(next_states_hat, next_states)
 
                 optimizer.zero_grad()
@@ -47,8 +49,8 @@ class DynamicsModel(nn.Module):
                 optimizer.step()
                 num_iters += 1
 
-                if self.writer is not None:
-                    self.writer.add_scalar('loss/state/{}'.format(self.train_iterations), loss, num_iters)
+                if writer is not None:
+                    writer.add_scalar('loss/state/{}'.format(self.train_iterations), loss, num_iters)
         self.train_iterations += 1
 class Model(DynamicsModel):
     def __init__(self, state_dim, action_dim, hidden_units=50, noise=None):
@@ -89,8 +91,7 @@ class ModelWithReward(DynamicsModel):
         self.linear4 = nn.Linear(hidden_units, 1)
         self.activation_fn = nn.ReLU()
 
-    def _forward(self, state, action):
-        x = torch.cat((state, action), -1)
+    def _forward(self, x):
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))
         s_diff = self.linear3(x)

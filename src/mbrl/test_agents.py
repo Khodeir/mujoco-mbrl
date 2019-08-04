@@ -1,7 +1,7 @@
 from src.mbrl.logger import logger
 import os
 exp_dir = 'test_agents_exp'
-logger.setup(exp_dir, os.path.join(exp_dir, 'log_nn_cost.txt'), 'debug')
+logger.setup(exp_dir, os.path.join(exp_dir, 'log.txt'), 'debug')
 
 from src.mbrl.agents import *
 environment = EnvWrapper.load('reacher', 'easy', visualize_reward=True)
@@ -12,7 +12,7 @@ from src.mbrl.models import Model, CoshLoss, SmoothAbsLoss
 from tensorboardX import SummaryWriter
 
 model = Model(environment.state_dim, environment.action_dim)
-model.writer = SummaryWriter(log_dir=exp_dir)
+writer = SummaryWriter(log_dir=exp_dir)
 l2_penalty = 0  # 0.001
 learn_rate = 0.001
 optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate, weight_decay=l2_penalty)
@@ -40,9 +40,9 @@ state_cost = SmoothAbsLoss(weights=environment.get_goal_weights(), goal_state=go
 
 horizon = 20
 rollout_length = 250
-num_rollouts_per_iteration = 5
+num_rollouts_per_iteration = 10
 num_train_iterations = 100
-num_epochs_per_iteration = 50
+num_epochs_per_iteration = 10
 batch_size = 50
 
 agent = MPCAgent(
@@ -57,6 +57,7 @@ agent = MPCAgent(
     num_rollouts_per_iteration,
     num_train_iterations,
     num_epochs_per_iteration,
+    writer=writer,
     batch_size=batch_size
 )
 

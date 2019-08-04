@@ -37,6 +37,13 @@ class Rollout:
     @property
     def rewards(self):
         return self._rewards
+    @property
+    def sum_of_rewards(self):
+        return sum(self.rewards[1:])
+    def get_sum_of_state_costs(self, state_cost):
+        return sum(map(state_cost, self.states))
+    def get_sum_of_action_costs(self, action_costs):
+        return sum(map(action_costs, self.actions[:-1]))
 
     def __len__(self):
         return self._length

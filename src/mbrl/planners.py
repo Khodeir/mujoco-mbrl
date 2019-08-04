@@ -100,8 +100,7 @@ class GradientDescentPlanner(ModelPlanner):
         action_list = [sample_action() for _ in range(horizon)]
 
         for i in range(horizon):
-            joint_state = torch.cat([state_list[-1], action_list[i]])
-            next_state = model(joint_state)
+            next_state = model(state_list[-1], action_list[i])
             state_list.append(next_state)
 
         return state_list, action_list
@@ -135,8 +134,7 @@ class GradientDescentPlanner(ModelPlanner):
             loss = torch.tensor(0.0, requires_grad=True)
             # Loop forwards, accumulate costs
             for i in range(horizon):
-                joint_state = torch.cat([state_list[-1], action_list[i]])
-                next_state = model(joint_state)
+                next_state = model(state_list[-1], action_list[i])
                 state_list.append(next_state)
                 loss += state_cost(next_state) + action_cost(action_list[i])
             # Backprop losses to actions
@@ -239,8 +237,7 @@ class RandomShootingPlanner(ModelPlanner):
                 states = state_list[i * num_trajectories : (i + 1) * num_trajectories]
             actions = action_list[i * num_trajectories : (i + 1) * num_trajectories]
             # infer with model
-            state_action = torch.cat([states, actions], dim=1)
-            state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(state_action)
+            state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(states, actions)
         costs = (state_cost(state_list) + action_cost(action_list)).view(horizon, num_trajectories).sum(0).detach().numpy()
         trajectories = []
         state_list = state_list.view((horizon, num_trajectories, -1))

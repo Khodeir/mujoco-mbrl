@@ -33,6 +33,7 @@ def compute_jacobian(inputs, output):
 
 
 class Recorder:
+    # recorder.record_frame(env.physics.render(camera_id=0), t)
 
     def __init__(self, experiment_name, count):
         self.experiment_name = experiment_name
