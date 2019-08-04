@@ -1,13 +1,6 @@
 import os
-from collections import defaultdict
 import logging
 from colorlog import ColoredFormatter
-
-import pandas
-import numpy as np
-
-from tabulate import tabulate
-
 
 class LoggerClass(object):
     GLOBAL_LOGGER_NAME = '_global_logger'
@@ -37,10 +30,7 @@ class LoggerClass(object):
         self._dir = None
         self._logger = None
         self._log_path = None
-        self._csv_path = None
-        self._tabular = defaultdict(list)
-        self._curr_recorded = list()
-        self._num_dump_tabular_calls = 0
+
 
     @property
     def dir(self):
@@ -56,12 +46,6 @@ class LoggerClass(object):
                                         log_path,
                                         lvl=lvl,
                                         display_name=display_name)
-        self._csv_path = os.path.splitext(log_path)[0] + '.csv'
-
-        ### load csv if exists
-        if os.path.exists(self._csv_path):
-            self._tabular = {k: list(v) for k, v in pandas.read_csv(self._csv_path).items()}
-            self._num_dump_tabular_calls = len(tuple(self._tabular.values())[0])
 
     def _get_logger(self, name, log_path, lvl=logging.INFO, display_name=None):
         if isinstance(lvl, str):
@@ -117,47 +101,6 @@ class LoggerClass(object):
     def critical(self, s):
         assert (self._logger is not None)
         self._logger.critical(s)
-
-    ####################
-    ### Data logging ###
-    ####################
-
-    def record_tabular(self, key, val):
-        assert (str(key) not in self._curr_recorded)
-        self._curr_recorded.append(str(key))
-
-        if key in self._tabular:
-            self._tabular[key].append(val)
-        else:
-            self._tabular[key] = [np.nan] * self._num_dump_tabular_calls + [val]
-
-    def dump_tabular(self, print_func=None):
-        if len(self._curr_recorded) == 0:
-            return ''
-
-        ### reset
-        self._curr_recorded = list()
-        self._num_dump_tabular_calls += 1
-
-        ### make sure all same length
-        for k, v in self._tabular.items():
-            if len(v) == self._num_dump_tabular_calls:
-                pass
-            elif len(v) == self._num_dump_tabular_calls - 1:
-                self._tabular[k].append(np.nan)
-            else:
-                raise ValueError('key {0} should not have {1} items when {2} calls have been made'.format(
-                    k, len(v), self._num_dump_tabular_calls))
-
-        ### print
-        if print_func is not None:
-            log_str = tabulate(sorted([(k, v[-1]) for k, v in self._tabular.items()], key=lambda kv: kv[0]))
-            for line in log_str.split('\n'):
-                print_func(line)
-
-        ### write to file
-        tabular_pandas = pandas.DataFrame({k: pandas.Series(v) for k, v in self._tabular.items()})
-        tabular_pandas.to_csv(self._csv_path)
 
 
 logger = LoggerClass()

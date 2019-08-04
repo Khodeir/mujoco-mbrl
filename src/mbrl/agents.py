@@ -60,7 +60,6 @@ class Agent:
     def train(self):
         logger.info('Starting outer training loop.')
         self.add_rollouts()
-        logger.dump_tabular()
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug('Iteration {}'.format(iteration))
             logger.debug('Training model with batch size {} for {} epochs'.format(self.batch_size, self.num_epochs_per_iteration))
