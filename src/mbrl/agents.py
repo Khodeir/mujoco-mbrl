@@ -48,30 +48,33 @@ class Agent:
             for i in range(self.num_rollouts_per_iteration)
         ]
         self.dataset.add_rollouts(rollouts)
-        logger.record_tabular('AvgSumRewardPerRollout', np.mean([sum(filter(bool, rollout.rewards)) for rollout in rollouts]))
-        logger.record_tabular('AvgSumCostPerRollout', np.mean([sum(map(self.state_cost, rollout.states)) for rollout in rollouts]))
+        # logger.record_tabular('AvgSumRewardPerRollout', np.mean([sum(filter(bool, rollout.rewards)) for rollout in rollouts]))
+        # logger.record_tabular('AvgSumCostPerRollout', np.mean([sum(map(self.state_cost, rollout.states)) for rollout in rollouts]))
 
     def train(self):
         logger.info('Starting outer training loop.')
-        logger.record_tabular('Itr', 0)
-        self.add_rollouts()
+        # logger.record_tabular('Itr', 0)
+        for _ in range(10):
+            self.add_rollouts()
         logger.dump_tabular()
         for iteration in range(1, self.num_train_iterations + 1):
-            logger.record_tabular('Itr', iteration)
+            # logger.record_tabular('Itr', iteration)
             logger.debug('Iteration {}'.format(iteration))
             logger.debug('Training model with batch size {} for {} epochs'.format(self.batch_size, self.num_epochs_per_iteration))
             self.model.train_model(dataset=self.dataset, optimizer=self.optimizer, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration)
             self.add_rollouts(get_action=self.get_action)
-            logger.dump_tabular()
-
-
+            # logger.dump_tabular()
+def compose(f, g):
+    def wrap(*args, **kwargs):
+        return g(f(*args, **kwargs))
+    return wrap
 class MPCAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_trajectory = None
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
-        logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
+        # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
@@ -80,11 +83,11 @@ class MPCAgent(Agent):
         else:
             initial_trajectory = None
         self.last_trajectory = self.planner.plan(
-            initial_state=state,
+            initial_state=self.dataset.normalize_state(state),
             model=partial(self.model, unnormalize=self.dataset.unnormalize_state),
             state_cost=self.state_cost,
             action_cost=self.action_cost,
-            sample_action=self.environment.sample_action,
+            sample_action=compose(self.environment.sample_action, self.dataset.normalize_action),
             horizon=self.horizon,
             initial_trajectory=initial_trajectory,
         )

@@ -9,8 +9,10 @@ environment = EnvWrapper.load('reacher', 'easy', visualize_reward=True)
 from src.mbrl.planners import RandomShootingPlanner
 planner = RandomShootingPlanner
 from src.mbrl.models import Model, CoshLoss, SmoothAbsLoss
-model = Model(environment.state_dim, environment.action_dim)
+from tensorboardX import SummaryWriter
 
+model = Model(environment.state_dim, environment.action_dim)
+model.writer = SummaryWriter(log_dir=exp_dir)
 l2_penalty = 0  # 0.001
 learn_rate = 0.001
 optimizer = torch.optim.Adam(model.parameters(), lr=learn_rate, weight_decay=l2_penalty)

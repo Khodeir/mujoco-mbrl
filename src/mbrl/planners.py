@@ -242,7 +242,6 @@ class RandomShootingPlanner(ModelPlanner):
             state_action = torch.cat([states, actions], dim=1)
             state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(state_action)
         costs = (state_cost(state_list) + action_cost(action_list)).view(horizon, num_trajectories).sum(0).detach().numpy()
-
         trajectories = []
         state_list = state_list.view((horizon, num_trajectories, -1))
         action_list = action_list.view((horizon, num_trajectories, -1))

@@ -78,19 +78,23 @@ class EnvWrapper(environment.Base):
             self._env.physics.set_state(initial_state)
 
         state = self.get_state()
+        action = get_action(state)
+        state, observation, _ = self.step(action)
+        states.append(state)
+        observations.append(observation)
+        rewards.append(None)
         for _ in range(num_steps):
             action = get_action(state)
+            actions.append(action)
             state, observation, reward = self.step(action)
             states.append(state)
             observations.append(observation)
-            actions.append(action)
             rewards.append(reward)
 
-            _ = self.reset()
         return Rollout(
             states=states,
             observations=observations,
-            actions=actions[:-1],
+            actions=actions,
             rewards=rewards[1:],
         )
 

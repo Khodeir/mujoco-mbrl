@@ -207,6 +207,19 @@ class TransitionsDataset(Dataset):
         # (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
         return (state * self._stats["states"]["std"]) +  self._stats["states"]["mean"]
 
+    def normalize_state(self, state):
+        if not self._normalise:
+            return state
+        return (state - self._stats["states"]["mean"]) / self._stats["states"]["std"]
+    def unnormalize_action(self, action):
+        if not self._normalise:
+            return action
+        return (action * self._stats["actions"]["std"]) +  self._stats["actions"]["mean"]
+
+    def normalize_action(self, action):
+        if not self._normalise:
+            return action
+        return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
     @staticmethod
     def _get_stats(array):
         return {

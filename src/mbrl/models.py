@@ -5,6 +5,10 @@ from src.mbrl.data import TransitionsDataset, TransitionsSampler
 from src.mbrl.logger import logger
 
 class DynamicsModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.train_iterations = 0
+        self.writer = None
     def forward(self, x, unnormalize=None):
         out = self._forward(x)
         if unnormalize:
@@ -29,9 +33,8 @@ class DynamicsModel(nn.Module):
         if not criterion:
             criterion = torch.nn.MSELoss()
         train_data = DataLoader(dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset))
+        num_iters = 0
         for epoch in range(num_epochs):
-            epoch_loss = 0
-            num_iters = 0
             for inputs, outputs in train_data:
                 loss = 0
                 for ((states, observations, actions), (rewards, next_states, next_observations)) in zip(inputs, outputs):
@@ -42,20 +45,11 @@ class DynamicsModel(nn.Module):
                 optimizer.zero_grad()
                 loss.backward(retain_graph=True)
                 optimizer.step()
-                epoch_loss += loss
                 num_iters += 1
 
-            epoch_loss = float(epoch_loss.detach().numpy())
-            if epoch == 0:
-                logger.record_tabular("LossFirstEpoch", epoch_loss/num_iters)
-                logger.record_tabular("NumBatchesPerEpoch", num_iters)
-        logger.record_tabular("LossLastEpoch", epoch_loss/num_iters)
-
-            # if self.writer is not None:
-            #     self.writer.add_scalar('loss/state/{}'.format(iteration), loss, epoch)
-            #     self.writer.add_scalar('single_step_loss/{}'.format(iteration), single_loss, epoch)
-
-
+                if self.writer is not None:
+                    self.writer.add_scalar('loss/state/{}'.format(self.train_iterations), loss, num_iters)
+        self.train_iterations += 1
 class Model(DynamicsModel):
     def __init__(self, state_dim, action_dim, hidden_units=50, noise=None):
         super(Model, self).__init__()
