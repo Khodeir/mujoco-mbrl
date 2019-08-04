@@ -90,4 +90,4 @@ class MPCAgent(Agent):
             horizon=self.horizon,
             initial_trajectory=initial_trajectory,
         )
-        return self.last_trajectory[1][0]
+        return self.last_trajectory[1][0].flatten()
