@@ -5,6 +5,7 @@ import numpy as np
 from dm_control import suite
 from dm_control.rl import environment
 from src.mbrl.data import Rollout
+from src.mbrl.utils import Recorder
 
 
 class EnvWrapper(environment.Base):
@@ -78,7 +79,10 @@ class EnvWrapper(environment.Base):
         return self.get_state(), obs, reward
 
     def get_rollout(
-        self, num_steps: int, get_action: Callable[[torch.Tensor], torch.Tensor] = None
+        self,
+        num_steps: int,
+        get_action: Callable[[torch.Tensor], torch.Tensor] = None,
+        step_callback: Optional[Callable] = None,
     ) -> Rollout:
         if get_action is None:
             get_action = lambda state: self.sample_action()
@@ -96,13 +100,15 @@ class EnvWrapper(environment.Base):
         states.append(state)
         observations.append(observation)
         rewards.append(None)
-        for _ in range(num_steps):
+        for timestep in range(num_steps):
             action = get_action(state)
             actions.append(action)
             state, observation, reward = self.step(action)
             states.append(state)
             observations.append(observation)
             rewards.append(reward)
+            if step_callback is not None:
+                step_callback(timestep)
 
         return Rollout(
             states=states,
@@ -110,6 +116,15 @@ class EnvWrapper(environment.Base):
             actions=actions,
             rewards=rewards[1:],
         )
+
+    def record_rollout(self, mp4path, *args, **kwargs):
+        with Recorder(mp4path) as recorder:
+            record_frame = lambda t: recorder.record_frame(
+                self._env.physics.render(camera_id=0), t
+            )
+            kwargs["step_callback"] = record_frame
+            self.get_rollout(*args, **kwargs)
+            recorder.make_movie()
 
 
 class PointMass(EnvWrapper):

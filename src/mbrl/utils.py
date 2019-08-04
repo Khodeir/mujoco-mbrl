@@ -31,25 +31,24 @@ def compute_jacobian(inputs, output):
 
     return jacobian
 
+from tempfile import TemporaryDirectory
 
 class Recorder:
-    # recorder.record_frame(env.physics.render(camera_id=0), t)
-
-    def __init__(self, experiment_name, count):
-        self.experiment_name = experiment_name
-        self.count = count
-        os.makedirs('frames', exist_ok=True)
-        os.makedirs('frames/{}'.format(self.experiment_name), exist_ok=True)
-        os.makedirs(os.path.join('frames', '{}-{}'.format(self.experiment_name, self.count)))
+    def __init__(self, final_path):
+        self.final_path = final_path
+    def  __enter__(self):
+        self.tmpdir = TemporaryDirectory()
+        return self
+    def  __exit__(self, exc, value, tb):
+        self.tmpdir.cleanup()
 
     def record_frame(self, image_data, timestep):
         img = Image.fromarray(image_data, 'RGB')
-        fname = os.path.join('frames', '{}-{}'.format(self.experiment_name, self.count), 'frame-%.10d.png' % timestep)
+        fname = os.path.join(self.tmpdir.name, 'frame-%.10d.png' % timestep)
         img.save(fname)
 
     def make_movie(self):
-        frames = 'frames/{}-{}/frame-%010d.png'.format(self.experiment_name, self.count)
-        movie = 'frames/{}/{}.mp4'.format(self.experiment_name, self.count)
+        frames = os.path.join(self.tmpdir.name, 'frame-%010d.png')
+        movie = '{}.mp4'.format(self.final_path)
         string = "ffmpeg -framerate 24 -y -i {} -r 30 -pix_fmt yuv420p {}".format(frames, movie)
         subprocess.call(string.split())
-        shutil.rmtree('frames/{}-{}'.format(self.experiment_name, self.count))
