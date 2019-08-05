@@ -55,8 +55,8 @@ class DynamicsModel(nn.Module):
         self,
         dataset: TransitionsDataset,
         optimizer: torch.optim.Optimizer,
-        batch_size: int = 50,
-        num_epochs: int = 10,
+        batch_size: int = 512,
+        num_epochs: int = 50,
         criterion=None,
         writer=None,
     ):
