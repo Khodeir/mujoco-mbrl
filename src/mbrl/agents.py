@@ -1,4 +1,5 @@
 import torch
+import pickle
 from torch.nn import Module as TorchNNModule
 from src.mbrl.data import Rollout, TransitionsDataset
 from src.mbrl.env_wrappers import EnvWrapper
@@ -9,6 +10,7 @@ from typing import List
 import numpy as np
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
+
 
 class Agent:
     def __init__(
@@ -23,9 +25,7 @@ class Agent:
         rollout_length: int,
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
-        num_epochs_per_iteration: int,
         writer: SummaryWriter,
-        batch_size: int,
     ):
         self.environment = environment
         self.planner = planner
@@ -36,36 +36,78 @@ class Agent:
         self.rollout_length = rollout_length
         self.num_rollouts_per_iteration = num_rollouts_per_iteration
         self.num_train_iterations = num_train_iterations
-        self.num_epochs_per_iteration = num_epochs_per_iteration
-        self.batch_size = batch_size
         self.optimizer = optimizer
         self.dataset = TransitionsDataset(rollouts=[], transitions_capacity=100000)
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
+
+    def reset_goal(self):
+        goal_state = self.environment.set_goal()
+        self.state_cost.set_goal_state(goal_state)
+
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def add_rollouts(self, get_action=None):
-        rollout_type = 'policy' if get_action else 'random'
-        logger.info('Generating {} {} rollouts of {} length.'.format(self.num_rollouts_per_iteration, rollout_type, self.rollout_length))
+        rollout_type = "policy" if get_action else "random"
+        logger.info(
+            "Generating {} {} rollouts of {} length.".format(
+                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+            )
+        )
         rollouts = [
             self.environment.get_rollout(self.rollout_length, get_action)
             for i in range(self.num_rollouts_per_iteration)
         ]
         self.dataset.add_rollouts(rollouts)
-        self.writer.add_scalar('AvgRolloutRewards/{}'.format(rollout_type), np.mean([rollout.sum_of_rewards for rollout in rollouts]), self.train_iterations)
-        self.writer.add_scalar('AvgRolloutStateCosts/{}'.format(rollout_type), np.mean([rollout.get_sum_of_state_costs(self.state_cost) for rollout in rollouts]), self.train_iterations)
-        self.writer.add_scalar('AvgRolloutActionCosts/{}'.format(rollout_type), np.mean([rollout.get_sum_of_action_costs(self.action_cost) for rollout in rollouts]), self.train_iterations)
+        self.writer.add_scalar(
+            "AvgRolloutRewards/{}".format(rollout_type),
+            np.mean([rollout.sum_of_rewards for rollout in rollouts]),
+            self.train_iterations,
+        )
+        self.writer.add_scalar(
+            "AvgRolloutStateCosts/{}".format(rollout_type),
+            np.mean(
+                [
+                    rollout.get_sum_of_state_costs(self.state_cost)
+                    for rollout in rollouts
+                ]
+            ),
+            self.train_iterations,
+        )
+        self.writer.add_scalar(
+            "AvgRolloutActionCosts/{}".format(rollout_type),
+            np.mean(
+                [
+                    rollout.get_sum_of_action_costs(self.action_cost)
+                    for rollout in rollouts
+                ]
+            ),
+            self.train_iterations,
+        )
 
     def train(self):
-        logger.info('Starting outer training loop.')
+        logger.info("Starting outer training loop.")
+        self.reset_goal()
         self.add_rollouts()
         for iteration in range(1, self.num_train_iterations + 1):
-            logger.debug('Iteration {}'.format(iteration))
-            logger.debug('Training model with batch size {} for {} epochs'.format(self.batch_size, self.num_epochs_per_iteration))
+            logger.debug("Iteration {}".format(iteration))
+            # TODO: Check if we need to alter the frequency of reset goal
+            self.reset_goal()
             self.train_iterations = iteration
-            self.model.train_model(dataset=self.dataset, optimizer=self.optimizer, batch_size=self.batch_size, num_epochs=self.num_epochs_per_iteration, writer=self.writer)
+            self.model.train_model(
+                dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
+            )
             self.add_rollouts(get_action=self.get_action)
+
+    @staticmethod
+    def save(agent, path):
+        writer = agent.writer
+        agent.writer = None
+        with open(path, "wb") as f:
+            pickle.dump(agent, f)
+        agent.writer = writer
+
 
 class MPCAgent(Agent):
     def __init__(self, *args, **kwargs):
@@ -83,7 +125,12 @@ class MPCAgent(Agent):
             initial_trajectory = None
         self.last_trajectory = self.planner.plan(
             initial_state=state,
-            model=partial(self.model, normalize_state=self.dataset.normalize_state, normalize_action=self.dataset.normalize_action, unnormalize=self.dataset.unnormalize_state),
+            model=partial(
+                self.model,
+                normalize_state=self.dataset.normalize_state,
+                normalize_action=self.dataset.normalize_action,
+                unnormalize=self.dataset.unnormalize_state,
+            ),
             state_cost=self.state_cost,
             action_cost=self.action_cost,
             sample_action=self.environment.sample_action,

@@ -37,11 +37,14 @@ class Rollout:
     @property
     def rewards(self):
         return self._rewards
+
     @property
     def sum_of_rewards(self):
         return sum(self.rewards[1:])
+
     def get_sum_of_state_costs(self, state_cost):
         return sum(map(state_cost, self.states))
+
     def get_sum_of_action_costs(self, action_costs):
         return sum(map(action_costs, self.actions[:-1]))
 
@@ -108,6 +111,7 @@ class Rollout:
             rollout += list(r)
 
         return rollout[1:-1]
+
 
 class TransitionsDataset(Dataset):
     def __init__(
@@ -212,33 +216,37 @@ class TransitionsDataset(Dataset):
         if not self._normalise:
             return state
         # (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
-        return (state * self._stats["states"]["std"]) +  self._stats["states"]["mean"]
+        return (state * self._stats["states"]["std"]) + self._stats["states"]["mean"]
 
     def normalize_state(self, state):
         if not self._normalise:
             return state
         return (state - self._stats["states"]["mean"]) / self._stats["states"]["std"]
+
     def unnormalize_action(self, action):
         if not self._normalise:
             return action
-        return (action * self._stats["actions"]["std"]) +  self._stats["actions"]["mean"]
+        return (action * self._stats["actions"]["std"]) + self._stats["actions"]["mean"]
 
     def normalize_action(self, action):
         if not self._normalise:
             return action
         return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
+
     @staticmethod
     def _get_stats(array):
         return {
             "mean": torch.mean(array, dim=0),
             "std": torch.std(array, dim=0),
-            "min": torch.min(array, dim=0),
-            "max": torch.max(array, dim=0),
+            "min": torch.min(array, dim=0).values,
+            "max": torch.max(array, dim=0).values,
         }
+
 
 class TransitionsSampler(Sampler):
     def __init__(self, data_source: TransitionsDataset):
         self.data_source = data_source
+
     def __iter__(self):
         possible_transitions = []
         for roll_idx, roll in enumerate(self.data_source._rollouts):
@@ -248,6 +256,7 @@ class TransitionsSampler(Sampler):
 
         for trans in possible_transitions:
             yield trans
+
 
 # -------------------------------------------------------------------------------------------
 # Some things for testing
