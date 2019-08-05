@@ -1,10 +1,9 @@
 import os
 from PIL import Image
 import subprocess
-import shutil
+from tempfile import TemporaryDirectory
 
 from torch.autograd.gradcheck import zero_gradients
-
 import torch
 
 
@@ -31,15 +30,16 @@ def compute_jacobian(inputs, output):
 
     return jacobian
 
-from tempfile import TemporaryDirectory
 
 class Recorder:
     def __init__(self, final_path):
         self.final_path = final_path
-    def  __enter__(self):
+
+    def __enter__(self):
         self.tmpdir = TemporaryDirectory()
         return self
-    def  __exit__(self, exc, value, tb):
+
+    def __exit__(self, exc, value, tb):
         self.tmpdir.cleanup()
 
     def record_frame(self, image_data, timestep):

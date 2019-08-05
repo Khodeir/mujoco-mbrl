@@ -1,16 +1,15 @@
 import torch
 import torch.nn
 import numpy as np
-import copy
 
 # Types:
 from typing import Callable, Optional, List, Tuple
-from torch import Tensor
 
 Trajectory = Tuple[List[torch.Tensor], List[torch.Tensor]]
 ScalarTorchFunc = Callable[[torch.Tensor], float]
-TensorTorchFunc = Callable[[torch.Tensor], torch.Tensor]
-TorchFunc = Callable[[], torch.Tensor]
+TensorTorchFunc = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+TorchFunc = Callable[[int], torch.Tensor]
+
 
 class ModelPlanner:
     @staticmethod
@@ -28,7 +27,7 @@ class ModelPlanner:
 
 
 class GradientDescentPlanner(ModelPlanner):
-    defaults = dict(num_iterations=100, stop_condition=0.001)
+    defaults = dict(num_iterations=40, stop_condition=0.002)
 
     @staticmethod
     def plan(
@@ -225,4 +224,3 @@ class RandomShootingPlanner(ModelPlanner):
         for i in range(num_trajectories):
             trajectories.append((state_list[:, i], action_list[:, i]))
         return trajectories, costs
-

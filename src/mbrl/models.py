@@ -1,8 +1,8 @@
+import abc
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from src.mbrl.data import TransitionsDataset, TransitionsSampler
-from src.mbrl.logger import logger
 
 
 class DynamicsModel(nn.Module):
@@ -158,7 +158,7 @@ class CostModel(nn.Module):
         return cost
 
 
-class StateCost(nn.Module):
+class StateCost(nn.Module, abc.ABC):
     goal_state = None
 
     def set_goal_state(self, goal_state):
@@ -210,4 +210,3 @@ class QuadraticCost(StateCost):
         a = self.linear(x - self.goal_state)
         out = torch.dot(x - self.goalState, a)
         return out
-

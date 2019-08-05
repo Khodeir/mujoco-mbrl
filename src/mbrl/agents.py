@@ -1,12 +1,12 @@
 import torch
 import pickle
-from torch.nn import Module as TorchNNModule
-from src.mbrl.data import Rollout, TransitionsDataset
+
+from src.mbrl.data import TransitionsDataset
 from src.mbrl.env_wrappers import EnvWrapper
 from src.mbrl.planners import ModelPlanner, ScalarTorchFunc
 from src.mbrl.models import DynamicsModel
 from functools import partial
-from typing import List
+
 import numpy as np
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter

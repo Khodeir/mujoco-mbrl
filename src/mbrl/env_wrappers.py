@@ -3,12 +3,12 @@ import torch
 import numpy as np
 
 from dm_control import suite
-from dm_control.rl import environment
+import dm_env
 from src.mbrl.data import Rollout
 from src.mbrl.utils import Recorder
 
 
-class EnvWrapper(environment.Base):
+class EnvWrapper(dm_env.Environment):
     def __init__(self, env):
         self._env = env
         self._state_penalty = 1.0
