@@ -17,9 +17,15 @@ class EnvWrapper(dm_env.Environment):
 
     @staticmethod
     def load(env_name, task_name, **kwargs):
-        env = suite.load(env_name, task_name, **kwargs)
         wrapper_classname = "".join([part.capitalize() for part in env_name.split("_")])
         try:
+            wrapper_class = eval(wrapper_classname)
+            environment_kwargs = kwargs.get('environment_kwargs', {})
+            if hasattr(wrapper_class, 'override_control_timestep'):
+                print('Overriding control time step')
+                environment_kwargs['control_timestep'] = wrapper_class.override_control_timestep
+                kwargs['environment_kwargs'] = environment_kwargs
+            env = suite.load(env_name, task_name, **kwargs)
             wrapper = eval(wrapper_classname)(env)
             return wrapper
         except NameError:
@@ -150,7 +156,7 @@ class PointMass(EnvWrapper):
 
 class Reacher(EnvWrapper):
     state_dim = 4
-
+    override_control_timestep = 0.04
     def sample_state(self) -> torch.Tensor:
         state = np.zeros(self.state_dim)
 
