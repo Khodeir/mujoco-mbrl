@@ -60,29 +60,53 @@ class Agent:
             for i in range(self.num_rollouts_per_iteration)
         ]
         self.dataset.add_rollouts(rollouts)
+
+        sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
         self.writer.add_scalar(
             "AvgRolloutRewards/{}".format(rollout_type),
-            np.mean([rollout.sum_of_rewards for rollout in rollouts]),
+            np.mean(sum_rewards),
             self.train_iterations,
         )
+        self.writer.add_histogram(
+            "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
+        )
+
+        state_costs = [
+            rollout.get_sum_of_state_costs(self.state_cost) for rollout in rollouts
+        ]
         self.writer.add_scalar(
             "AvgRolloutStateCosts/{}".format(rollout_type),
-            np.mean(
-                [
-                    rollout.get_sum_of_state_costs(self.state_cost)
-                    for rollout in rollouts
-                ]
-            ),
+            np.mean(state_costs),
             self.train_iterations,
         )
+        self.writer.add_histogram(
+            "RolloutStateCosts/{}".format(rollout_type),
+            state_costs,
+            self.train_iterations,
+        )
+
+        action_costs = [
+            rollout.get_sum_of_action_costs(self.action_cost) for rollout in rollouts
+        ]
         self.writer.add_scalar(
             "AvgRolloutActionCosts/{}".format(rollout_type),
-            np.mean(
-                [
-                    rollout.get_sum_of_action_costs(self.action_cost)
-                    for rollout in rollouts
-                ]
-            ),
+            np.mean(action_costs),
+            self.train_iterations,
+        )
+        self.writer.add_histogram(
+            "RolloutActionCosts/{}".format(rollout_type),
+            action_costs,
+            self.train_iterations,
+        )
+        total_costs = np.add(action_costs, state_costs)
+        self.writer.add_scalar(
+            "AvgRolloutTotalCosts/{}".format(rollout_type),
+            np.mean(total_costs),
+            self.train_iterations,
+        )
+        self.writer.add_histogram(
+            "RolloutTotalCosts/{}".format(rollout_type),
+            total_costs,
             self.train_iterations,
         )
 
