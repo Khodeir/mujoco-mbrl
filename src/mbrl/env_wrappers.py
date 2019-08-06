@@ -21,12 +21,11 @@ class EnvWrapper(dm_env.Environment):
         wrapper_classname = "".join([part.capitalize() for part in env_name.split("_")])
         try:
             wrapper_class = eval(wrapper_classname)
-            environment_kwargs = kwargs.get('environment_kwargs', {})
+            environment_kwargs = kwargs['environment_kwargs'] = kwargs.get('environment_kwargs', {})
             environment_kwargs["flat_observation"] = flat_obs
             if hasattr(wrapper_class, 'override_control_timestep'):
                 print('Overriding control time step')
                 environment_kwargs['control_timestep'] = wrapper_class.override_control_timestep
-                kwargs['environment_kwargs'] = environment_kwargs
             env = suite.load(env_name, task_name, **kwargs)
             wrapper = eval(wrapper_classname)(env, flat_obs=flat_obs)
             return wrapper

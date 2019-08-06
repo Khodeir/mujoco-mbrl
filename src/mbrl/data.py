@@ -139,10 +139,9 @@ class TransitionsDataset(Dataset):
         super().__init__()
         self.capacity = transitions_capacity
         self.horizon = horizon
-        # The transitions dataset is gonna assume all rollouts have observations like the first one
-        self._flat_obs = rollouts[0].flat_observations
         self._rollouts = []
         self._occupied_capacity = 0
+        self._flat_obs = None
         self._stats = {
             "state": None,
             "observation": None,
@@ -151,10 +150,15 @@ class TransitionsDataset(Dataset):
         }
         self._normalise = normalise
 
-        # if len(self._rollouts) > 0:  -> Why did we have this check?
-        self.add_rollouts(rollouts)
+        # This check exists so that an empty dataset can be instantiated
+        if len(self._rollouts) > 0:
+            self.add_rollouts(rollouts)
 
     def add_rollouts(self, rollouts):
+        if self._flat_obs is None:
+            # The transitions dataset is gonna assume all rollouts have observations like the first one
+            self._flat_obs = rollouts[0].flat_observations
+
         for roll in rollouts:
             assert roll.flat_observations == self._flat_obs
             self._occupied_capacity += max(len(roll) - self.horizon + 1, 0)
