@@ -48,17 +48,17 @@ class Agent:
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
-    def add_rollouts(self, get_action=None):
+    def add_rollouts(self, get_action=None, num_rollouts=None):
         rollout_type = "policy" if get_action else "random"
         logger.info(
             "Generating {} {} rollouts of {} length.".format(
                 self.num_rollouts_per_iteration, rollout_type, self.rollout_length
             )
         )
-        rollouts = [
-            self.environment.get_rollout(self.rollout_length, get_action)
-            for i in range(self.num_rollouts_per_iteration)
-        ]
+        rollouts = []
+        for _ in range(num_rollouts or self.num_rollouts_per_iteration):
+            self.last_trajectory = None
+            rollouts.append(self.environment.get_rollout(self.rollout_length, get_action))
         self.dataset.add_rollouts(rollouts)
 
         sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
@@ -113,7 +113,7 @@ class Agent:
     def train(self):
         logger.info("Starting outer training loop.")
         self.reset_goal()
-        self.add_rollouts()
+        self.add_rollouts(num_rollouts=100)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
