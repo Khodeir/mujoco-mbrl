@@ -73,7 +73,7 @@ class EnvWrapper(dm_env.Environment):
 
     def step(
         self, action: torch.Tensor
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor]]:
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor], bool]:
         t = self._env.step(np.array(action))
 
         if self._flat_obs:
@@ -88,7 +88,7 @@ class EnvWrapper(dm_env.Environment):
             if t.reward is not None
             else None
         )
-        return self.get_state(), obs, reward
+        return self.get_state(), obs, reward, t.last()
 
     def get_rollout(
         self,
@@ -108,19 +108,21 @@ class EnvWrapper(dm_env.Environment):
 
         state = self.get_state()
         action = get_action(state)
-        state, observation, _ = self.step(action)
+        state, observation, _, _ = self.step(action)
         states.append(state)
         observations.append(observation)
         rewards.append(None)
         for timestep in range(num_steps):
             action = get_action(state)
             actions.append(action)
-            state, observation, reward = self.step(action)
+            state, observation, reward, done = self.step(action)
             states.append(state)
             observations.append(observation)
             rewards.append(reward)
             if step_callback is not None:
                 step_callback(timestep)
+            if done:
+                break
 
         return Rollout(
             states=states,
