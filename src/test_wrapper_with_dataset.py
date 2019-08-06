@@ -21,11 +21,21 @@ def random_rollout(environment, num_steps):
 def pretty_print_transition(inps, targets):
     print("Inputs: \n \t state = {} \n \t action = {}".format(np.around(inps[0], decimals=3),
                                                               np.around(inps[2], decimals=3)))
+
     print("\t observations:")
-    for k, v in inps[1].items():
-        print("\t \t {} : {}".format(k, np.around(v, decimals=3)))
+    if isinstance(inps[1], dict):
+        for k, v in inps[1].items():
+            print("\t \t {} : {}".format(k, np.around(v, decimals=3)))
+    else:
+        print("\t \t {}".format(np.around(inps[1], decimals=3)))
     print("Targets: \n \t state = {}, \n \t reward = {}".format(np.around(targets[1], decimals=3),
                                                                 np.around(targets[0], decimals=3)))
+    print("\t observations:")
+    if isinstance(targets[2], dict):
+        for k, v in targets[2].items():
+            print("\t \t {} : {}".format(k, np.around(v, decimals=3)))
+    else:
+        print("\t \t {}".format(np.around(targets[2], decimals=3)))
 
 
 env = EnvWrapper.load(env_name="reacher", task_name="easy")

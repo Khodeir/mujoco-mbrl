@@ -14,6 +14,8 @@ class Rollout:
 
         self._length = len(rewards)
         self._states = states
+
+        self._flat_obs = isinstance(observations[0], torch.Tensor)
         self._observations = observations
         self._actions = actions + [None]
         self._rewards = [None] + rewards
@@ -41,6 +43,10 @@ class Rollout:
     @property
     def sum_of_rewards(self):
         return sum(self.rewards[1:])
+
+    @property
+    def flat_observations(self):
+        return self._flat_obs
 
     def get_sum_of_state_costs(self, state_cost):
         return sum(map(state_cost, self.states))
@@ -73,24 +79,33 @@ class Rollout:
 
         if stats is not None:
             inputs[0] = (inputs[0] - stats["states"]["mean"]) / stats["states"]["std"]
-            normalised_obs = {}
-            for k, v in inputs[1].items():
-                normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
-                    "observations"
-                ][k]["std"]
-            inputs[1] = normalised_obs
+
+            if self.flat_observations:
+                inputs[1] = (inputs[1] - stats["observations"]["mean"]) / stats["observations"]["std"]
+            else:
+                normalised_obs = {}
+                for k, v in inputs[1].items():
+                    normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
+                        "observations"
+                    ][k]["std"]
+                inputs[1] = normalised_obs
+
             inputs[2] = (inputs[2] - stats["actions"]["mean"]) / stats["actions"]["std"]
 
             outputs[0] = (outputs[0] - stats["rewards"]["mean"]) / stats["rewards"][
                 "std"
             ]
             outputs[1] = (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
-            normalised_obs = {}
-            for k, v in outputs[2].items():
-                normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
-                    "observations"
-                ][k]["std"]
-            outputs[2] = normalised_obs
+
+            if self.flat_observations:
+                outputs[2] = (outputs[2] - stats["observations"]["mean"]) / stats["observations"]["std"]
+            else:
+                normalised_obs = {}
+                for k, v in outputs[2].items():
+                    normalised_obs[k] = (v - stats["observations"][k]["mean"]) / stats[
+                        "observations"
+                    ][k]["std"]
+                outputs[2] = normalised_obs
 
         return tuple(inputs), tuple(outputs)
 
@@ -119,11 +134,13 @@ class TransitionsDataset(Dataset):
         rollouts: List[Rollout],
         transitions_capacity: int = int(1e6),
         horizon: int = 1,
-        normalise=True,
+        normalise=True
     ):
         super().__init__()
         self.capacity = transitions_capacity
         self.horizon = horizon
+        # The transitions dataset is gonna assume all rollouts have observations like the first one
+        self._flat_obs = rollouts[0].flat_observations
         self._rollouts = []
         self._occupied_capacity = 0
         self._stats = {
@@ -134,11 +151,12 @@ class TransitionsDataset(Dataset):
         }
         self._normalise = normalise
 
-        if len(self._rollouts) > 0:
-            self.add_rollouts(rollouts)
+        # if len(self._rollouts) > 0:  -> Why did we have this check?
+        self.add_rollouts(rollouts)
 
     def add_rollouts(self, rollouts):
         for roll in rollouts:
+            assert roll.flat_observations == self._flat_obs
             self._occupied_capacity += max(len(roll) - self.horizon + 1, 0)
             self._rollouts.append(roll)
 
@@ -194,21 +212,28 @@ class TransitionsDataset(Dataset):
     def _update_stats(self):
         stats = {}
         all_states, all_actions, all_rewards = [], [], []
-        all_obs = defaultdict(lambda: [])
+        all_obs = [] if self._flat_obs else defaultdict(lambda: [])
         for r in self._rollouts:
             all_states.append(torch.stack(r.states))
             all_actions.append(torch.stack(r.actions[:-1]))  # Ignore last action
             all_rewards.append(torch.stack(r.rewards[1:]))  # Ignore first reward
-            for obs in r.observations:
-                for k, v in obs.items():
-                    all_obs[k].append(v)
+            if self._flat_obs:
+                all_obs.append(torch.stack(r.observations))
+            else:
+                for obs in r.observations:
+                    for k, v in obs.items():
+                        all_obs[k].append(v)
 
         stats["states"] = self._get_stats(torch.cat(all_states))
         stats["actions"] = self._get_stats(torch.cat(all_actions))
         stats["rewards"] = self._get_stats(torch.cat(all_rewards))
-        stats["observations"] = {
-            k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
-        }
+
+        if self._flat_obs:
+            stats["observations"] = self._get_stats(torch.cat(all_obs))
+        else:
+            stats["observations"] = {
+                k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
+            }
 
         self._stats = stats
 
@@ -222,6 +247,16 @@ class TransitionsDataset(Dataset):
         if not self._normalise:
             return state
         return (state - self._stats["states"]["mean"]) / self._stats["states"]["std"]
+
+    def unnormalize_obs(self, obs):
+        if not self._normalise:
+            return obs
+        return (obs * self._stats["observations"]["std"]) + self._stats["observations"]["mean"]
+
+    def normalize_obs(self, obs):
+        if not self._normalise:
+            return obs
+        return (obs - self._stats["observations"]["mean"]) / self._stats["observations"]["std"]
 
     def unnormalize_action(self, action):
         if not self._normalise:

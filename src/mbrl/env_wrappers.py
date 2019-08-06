@@ -9,24 +9,26 @@ from src.mbrl.utils import Recorder
 
 
 class EnvWrapper(dm_env.Environment):
-    def __init__(self, env):
+    def __init__(self, env, flat_obs):
         self._env = env
         self._state_penalty = 1.0
         self.action_dim = env.action_spec().shape[0]
         self._action_spec = env.action_spec()
+        self._flat_obs = flat_obs
 
     @staticmethod
-    def load(env_name, task_name, **kwargs):
+    def load(env_name, task_name, flat_obs=True, **kwargs):
         wrapper_classname = "".join([part.capitalize() for part in env_name.split("_")])
         try:
             wrapper_class = eval(wrapper_classname)
             environment_kwargs = kwargs.get('environment_kwargs', {})
+            environment_kwargs["flat_observation"] = flat_obs
             if hasattr(wrapper_class, 'override_control_timestep'):
                 print('Overriding control time step')
                 environment_kwargs['control_timestep'] = wrapper_class.override_control_timestep
                 kwargs['environment_kwargs'] = environment_kwargs
             env = suite.load(env_name, task_name, **kwargs)
-            wrapper = eval(wrapper_classname)(env)
+            wrapper = eval(wrapper_classname)(env, flat_obs=flat_obs)
             return wrapper
         except NameError:
             raise NameError("No wrapper for {}".format(env_name))
@@ -73,10 +75,14 @@ class EnvWrapper(dm_env.Environment):
         self, action: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor]]:
         t = self._env.step(np.array(action))
-        obs = {
-            str(k): torch.tensor(v, dtype=torch.float32)
-            for k, v in t.observation.items()
-        }
+
+        if self._flat_obs:
+            obs = torch.tensor(t.observation['observations'], dtype=torch.float32)
+        else:
+            obs = {
+                str(k): torch.tensor(v, dtype=torch.float32)
+                for k, v in t.observation.items()
+            }
         reward = (
             torch.tensor(t.reward, dtype=torch.float32)
             if t.reward is not None
