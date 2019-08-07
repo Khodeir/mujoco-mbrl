@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Sampler
@@ -131,7 +131,7 @@ class Rollout:
 class TransitionsDataset(Dataset):
     def __init__(
         self,
-        rollouts: List[Rollout],
+        rollouts: Optional[List[Rollout]] = None,
         transitions_capacity: int = int(1e6),
         horizon: int = 1,
         normalise=True
@@ -151,7 +151,7 @@ class TransitionsDataset(Dataset):
         self._normalise = normalise
 
         # This check exists so that an empty dataset can be instantiated
-        if len(self._rollouts) > 0:
+        if rollouts is not None:
             self.add_rollouts(rollouts)
 
     def add_rollouts(self, rollouts):
@@ -192,6 +192,10 @@ class TransitionsDataset(Dataset):
     @property
     def statistics(self):
         return self._stats
+
+    @property
+    def rollouts(self):
+        return self._rollouts
 
     def __len__(self):
         return self._occupied_capacity
@@ -271,6 +275,7 @@ class TransitionsDataset(Dataset):
         if not self._normalise:
             return action
         return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
+
     def unnormalize_reward(self, reward):
         if not self._normalise:
             return reward
@@ -297,7 +302,7 @@ class TransitionsSampler(Sampler):
 
     def __iter__(self):
         possible_transitions = []
-        for roll_idx, roll in enumerate(self.data_source._rollouts):
+        for roll_idx, roll in enumerate(self.data_source.rollouts):
             for start_idx in range(len(roll) - self.data_source.horizon):
                 possible_transitions.append((roll_idx, start_idx))
         np.random.shuffle(possible_transitions)

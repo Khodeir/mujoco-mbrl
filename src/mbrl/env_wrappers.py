@@ -91,6 +91,7 @@ class EnvWrapper(dm_env.Environment):
             else None
         )
         return self.get_state(), obs, reward, t.last()
+
     def get_rollout(
         self,
         num_steps: int,
@@ -147,6 +148,7 @@ class EnvWrapper(dm_env.Environment):
 
 class PointMass(EnvWrapper):
     state_dim = 4
+    observation_dim = 4
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = super().get_goal_weights()
@@ -168,7 +170,9 @@ class PointMass(EnvWrapper):
 
 class Reacher(EnvWrapper):
     state_dim = 4
+    observation_dim = 6
     override_control_timestep = 0.04
+
     def sample_state(self) -> torch.Tensor:
         state = np.zeros(self.state_dim)
 
@@ -209,6 +213,7 @@ class Reacher(EnvWrapper):
 
 class Cheetah(EnvWrapper):
     state_dim = 18 - 1 + 2
+    observation_dim = 17
 
     def sample_state(self) -> torch.Tensor:
         state_dim = 18
@@ -266,6 +271,7 @@ class Cheetah(EnvWrapper):
 
 class Manipulator(EnvWrapper):
     state_dim = 22 + 7
+    observation_dim = 37
 
     def get_state(self) -> torch.Tensor:
         state = super().get_state()
@@ -301,6 +307,7 @@ class Manipulator(EnvWrapper):
 
 class Humanoid(EnvWrapper):
     state_dim = 55 + 5
+    observation_dim = 67
 
     def sample_state(self) -> torch.Tensor:
         state_dim = 55
@@ -401,12 +408,8 @@ class Humanoid(EnvWrapper):
         above_feet = ave_foot + np.array([0.0, 0.0, 1.3])
         torso = self.env.physics.named.data.xpos["torso"]
 
-        first_penalty = np.linalg.norm(
-            com_pos[:2] - ave_foot[:2]
-        )  # First described by Tassa
-        second_penalty = np.linalg.norm(
-            com_pos[:2] - torso[:2]
-        )  # Second term described by Tassa
+        first_penalty = np.linalg.norm(com_pos[:2] - ave_foot[:2])  # First described by Tassa
+        second_penalty = np.linalg.norm(com_pos[:2] - torso[:2])  # Second term described by Tassa
         third_penalty = np.linalg.norm(torso[1:] - above_feet[1:])  # Third term
 
         state = np.append(state, first_penalty)  # +1
@@ -464,6 +467,7 @@ class Swimmer(EnvWrapper):
 
 class Walker(EnvWrapper):
     state_dim = 18 - 1 + 3
+    observation_dim = 24
 
     def sample_state(self) -> torch.Tensor:
         state_dim = 18
@@ -475,17 +479,13 @@ class Walker(EnvWrapper):
         hip_rot = np.random.uniform(-0.15, 0.15)
         state[3] = hip_rot  # right_hip (-20, 100)   = (-0.3491, 1.7452)
         state[4] = np.random.uniform(-0.3, 0)  # right_knee (-150, 0)   = (-2.6178 , 0)
-        state[5] = np.random.uniform(
-            -0.1, 0.1
-        )  # right_ankle (-45, 45)  = (-0.7854, 0.7854)
+        state[5] = np.random.uniform(-0.1, 0.1)  # right_ankle (-45, 45)  = (-0.7854, 0.7854)
 
         state[6] = -hip_rot
         state[7] = np.random.uniform(-0.3, 0)  # left_knee (-150, 0)   = (-2.6178 , 0)
-        state[8] = np.random.uniform(
-            -0.1, 0.1
-        )  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
+        state[8] = np.random.uniform(-0.1, 0.1)  # left_ankle (-45, 45)  = (-0.7854, 0.7854)
 
-        # state[9:] = np.random.uniform(-0.04, 0.04, 9) ## Velocities
+        # state[9:] = np.random.uniform(-0.04, 0.04, 9) # Velocities
 
         return torch.tensor(state, dtype=torch.float32)
 
@@ -507,12 +507,13 @@ class Walker(EnvWrapper):
         goal_state = torch.zeros(self.state_dim, dtype=torch.float)
         goal_state[-3] = 1.0  # target torso_upright
         goal_state[-2] = 1.3  # target torso_height
-        goal_state[-1] = 3.0  # 0.  ## target speed
+        goal_state[-1] = 3.0  # target speed
         return goal_state
 
 
 class Hopper(EnvWrapper):
     state_dim = 14 - 1 + 4
+    observation_dim = 15
 
     def sample_state(self) -> torch.Tensor:
         state_dim = 14
@@ -548,7 +549,7 @@ class Hopper(EnvWrapper):
 
     def set_goal(self) -> torch.Tensor:
         goal_state = torch.zeros(self.state_dim, dtype=torch.float)
-        goal_state[-2] = 0.9  ## target torso_height
-        goal_state[-1] = 1.0  ##  ## target speed
+        goal_state[-2] = 0.9  # target torso_height
+        goal_state[-1] = 1.0  # target speed
         return goal_state
 

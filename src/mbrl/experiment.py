@@ -38,7 +38,7 @@ class Model(Enum):
         if self is Model.Linear:
             return models.LinearModel(environment.state_dim, environment.action_dim)
         if self is Model.ModelWithReward:
-            return models.ModelWithReward(environment.state_dim, environment.action_dim)
+            return models.ModelWithReward(environment.observation_dim, environment.action_dim, hidden_units=50)
 
 
 class Optimizer(Enum):
@@ -50,7 +50,7 @@ class Optimizer(Enum):
 
     def construct(self, model):
         if self is Optimizer.Adam:
-            learn_rate = 0.001
+            learn_rate = 0.01
             l2_penalty = 0
             return torch.optim.Adam(
                 model.parameters(), lr=learn_rate, weight_decay=l2_penalty
@@ -71,8 +71,10 @@ def Environment(v):
 class Agent(Enum):
     GoalStateAgent = "gs"
     RewardPredictingAgent = "rw"
+
     def __str__(self):
         return self.value
+
     def construct(
         self,
         environment,
@@ -117,17 +119,19 @@ class Agent(Enum):
                 writer=writer,
             )
             return agent
+
+
 CONFIG_DEF = (
     {"name": "exp_dir", "type": str},
     {"name": "agent", "type": Agent, "choices": list(Agent)},
     {"name": "environment", "type": Environment},
     {"name": "planner", "type": Planner, "choices": list(Planner)},
     {"name": "model", "type": Model, "choices": list(Model)},
-    {"name": "optimizer", "type": Optimizer, "choices": list(Optimizer)},
+    {"name": "optimizer", "type": Optimizer, "choices": list(Optimizer), "default": "adam"},
     {"name": "horizon", "type": int, "default": 20},
-    {"name": "rollout_length", "type": int, "default": 25},
-    {"name": "num_rollouts_per_iteration", "type": int, "default": 10},
-    {"name": "num_train_iterations", "type": int, "default": 2},
+    {"name": "rollout_length", "type": int, "default": 200},
+    {"name": "num_rollouts_per_iteration", "type": int, "default": 5},
+    {"name": "num_train_iterations", "type": int, "default": 10},
 )
 
 

@@ -124,44 +124,44 @@ class LinearModel(DynamicsModel):
 
 
 class ModelWithReward(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_units=200):
+    def __init__(self, obs_dim, action_dim, hidden_units=200):
         super(ModelWithReward, self).__init__()
         self.train_iterations = 0
-        self.linear1 = nn.Linear(state_dim + action_dim, hidden_units)
+        self.linear1 = nn.Linear(obs_dim + action_dim, hidden_units)
         self.linear2 = nn.Linear(hidden_units, hidden_units)
-        self.linear3 = nn.Linear(hidden_units, state_dim)
+        self.linear3 = nn.Linear(hidden_units, obs_dim)
         self.linear4 = nn.Linear(hidden_units, 1)
         self.activation_fn = nn.ReLU()
 
     def _forward(self, x):
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))
-        s_diff = self.linear3(x)
+        obs = self.linear3(x)
         reward = self.linear4(x)
 
-        return s_diff, reward
+        return obs, reward
 
     def forward(
         self,
-        state,
+        observation,
         action,
+        normalize_obs=None,
+        unnormalize_obs=None,
         normalize_action=None,
-        normalize_state=None,
-        unnormalize_state=None,
         unnormalize_reward=None
     ):
         if normalize_action:
             action = normalize_action(action)
-        if normalize_state:
-            state = normalize_state(state)
-        x = torch.cat([state, action], dim=1)
-        state, reward = self._forward(x)
+        if normalize_obs:
+            observation = normalize_obs(observation)
+        x = torch.cat([observation, action], dim=1)
+        observation, reward = self._forward(x)
         if unnormalize_reward:
             reward = unnormalize_reward(reward)
-        if unnormalize_state:
-            state = unnormalize_state(state)
+        if unnormalize_obs:
+            observation = unnormalize_obs(observation)
 
-        return state, reward
+        return observation, reward
 
     def train_model(
         self,
@@ -181,19 +181,24 @@ class ModelWithReward(nn.Module):
         for epoch in range(num_epochs):
             for inputs, outputs in train_data:
                 loss = 0
+                total_obs_loss, total_rew_loss = 0, 0
                 for (
                     (states, observations, actions),
                     (rewards, next_states, next_observations),
                 ) in zip(inputs, outputs):
-                    next_states_hat, rewards_hat = self.forward(
-                        states,
+                    next_obs_hat, rewards_hat = self.forward(
+                        observations,
                         actions,
                         normalize_action=None,
-                        normalize_state=None,
-                        unnormalize_state=None,
+                        normalize_obs=None,
+                        unnormalize_obs=None,
                         unnormalize_reward=None
                     )
-                    loss = loss + criterion(next_states_hat, next_states) + criterion(rewards_hat, rewards.unsqueeze(dim=1))
+                    obs_loss = criterion(next_obs_hat, next_observations)
+                    rew_loss = criterion(rewards_hat, rewards.unsqueeze(dim=1))
+                    loss = loss + obs_loss + rew_loss
+                    total_obs_loss += obs_loss
+                    total_rew_loss += rew_loss
 
                 optimizer.zero_grad()
                 loss.backward(retain_graph=True)
@@ -202,7 +207,13 @@ class ModelWithReward(nn.Module):
 
                 if writer is not None:
                     writer.add_scalar(
-                        "loss/state/{}".format(self.train_iterations), loss, num_iters
+                        "loss/obs/{}".format(self.train_iterations), total_obs_loss, num_iters
+                    )
+                    writer.add_scalar(
+                        "loss/reward/{}".format(self.train_iterations), total_rew_loss, num_iters
+                    )
+                    writer.add_scalar(
+                        "loss/total/{}".format(self.train_iterations), loss, num_iters
                     )
         self.train_iterations += 1
 

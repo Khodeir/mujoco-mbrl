@@ -1,18 +1,19 @@
 import torch
 import pickle
 
-from src.mbrl.data import TransitionsDataset, Rollout
+from src.mbrl.data import TransitionsDataset
 from src.mbrl.env_wrappers import EnvWrapper
 from src.mbrl.planners import ModelPlanner
 from src.mbrl.models import DynamicsModel, ModelWithReward
-from functools import partial, reduce
+from functools import partial
 from operator import itemgetter
 
 import numpy as np
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
-from typing import List, Callable, Dict
+from typing import Callable, Dict
 ScalarTorchFunc = Callable[[torch.Tensor], float]
+
 
 def save(agent, path):
     writer = agent.writer
@@ -43,17 +44,17 @@ class MPCAgent:
         self.num_rollouts_per_iteration = num_rollouts_per_iteration
         self.num_train_iterations = num_train_iterations
         self.optimizer = optimizer
-        self.dataset = TransitionsDataset(rollouts=[], transitions_capacity=100000)
+        self.dataset = TransitionsDataset(transitions_capacity=10000)
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
         self.last_trajectory = None
-
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def train(self):
         raise NotImplementedError
+
 
 class GoalStateAgent(MPCAgent):
     def __init__(
@@ -164,6 +165,7 @@ class GoalStateAgent(MPCAgent):
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
             self._add_rollouts(get_action=self.get_action)
+
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         state = state_and_obs['state']
@@ -188,6 +190,7 @@ class GoalStateAgent(MPCAgent):
             initial_trajectory=initial_trajectory,
         )
         return self.last_trajectory[1][0].flatten()
+
 
 class RewardAgent(MPCAgent):
     def __init__(
@@ -214,7 +217,6 @@ class RewardAgent(MPCAgent):
             writer=writer,
         )
 
-
     def _add_rollouts(self, get_action=None, num_rollouts=None):
         rollout_type = "policy" if get_action else "random"
         logger.info(
@@ -238,10 +240,9 @@ class RewardAgent(MPCAgent):
             "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
         )
 
-
     def train(self):
         logger.info("Starting outer training loop.")
-        self._add_rollouts(num_rollouts=100)
+        self._add_rollouts()
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             self.train_iterations = iteration
@@ -256,7 +257,8 @@ class RewardAgent(MPCAgent):
                 return b(a(*args, **kwargs))
             return ab
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
-        obs = state_and_obs['state']
+        obs = state_and_obs['observation']
+
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
@@ -269,9 +271,9 @@ class RewardAgent(MPCAgent):
             model=compose(
                 partial(
                     self.model,
-                    normalize_state=self.dataset.normalize_state,
+                    normalize_obs=self.dataset.normalize_obs,
                     normalize_action=self.dataset.normalize_action,
-                    unnormalize_state=self.dataset.unnormalize_state,
+                    unnormalize_obs=self.dataset.unnormalize_obs,
                     unnormalize_reward=self.dataset.unnormalize_reward,
                 ),
                 itemgetter(0)
@@ -279,9 +281,9 @@ class RewardAgent(MPCAgent):
             cost=compose(
                 partial(
                     self.model,
-                    normalize_state=self.dataset.normalize_state,
+                    normalize_obs=self.dataset.normalize_obs,
                     normalize_action=self.dataset.normalize_action,
-                    unnormalize_state=self.dataset.unnormalize_state,
+                    unnormalize_obs=self.dataset.unnormalize_obs,
                     unnormalize_reward=self.dataset.unnormalize_reward,
                 ),
                 itemgetter(1)
