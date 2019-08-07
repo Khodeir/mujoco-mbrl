@@ -27,6 +27,7 @@ class Planner(Enum):
 class Model(Enum):
     NeuralNet = "nn"
     Linear = "lin"
+    ModelWithReward = "rw"
 
     def __str__(self):
         return self.value
@@ -36,6 +37,8 @@ class Model(Enum):
             return models.Model(environment.state_dim, environment.action_dim)
         if self is Model.Linear:
             return models.LinearModel(environment.state_dim, environment.action_dim)
+        if self is Model.ModelWithReward:
+            return models.ModelWithReward(environment.state_dim, environment.action_dim)
 
 
 class Optimizer(Enum):
@@ -68,7 +71,8 @@ def Environment(v):
 class Agent(Enum):
     GoalStateAgent = "gs"
     RewardPredictingAgent = "rw"
-
+    def __str__(self):
+        return self.value
     def construct(
         self,
         environment,
@@ -115,7 +119,7 @@ class Agent(Enum):
             return agent
 CONFIG_DEF = (
     {"name": "exp_dir", "type": str},
-    {"name": "agent", "type": Agent},
+    {"name": "agent", "type": Agent, "choices": list(Agent)},
     {"name": "environment", "type": Environment},
     {"name": "planner", "type": Planner, "choices": list(Planner)},
     {"name": "model", "type": Model, "choices": list(Model)},

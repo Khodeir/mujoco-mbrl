@@ -7,9 +7,6 @@ from src.mbrl.planners import ModelPlanner
 from src.mbrl.models import DynamicsModel, ModelWithReward
 from functools import partial, reduce
 from operator import itemgetter
-def compose(*functions):
-    return reduce(lambda f, g: lambda x: f(g(x)), functions, lambda x: x)
-
 
 import numpy as np
 from src.mbrl.logger import logger
@@ -192,7 +189,6 @@ class GoalStateAgent(MPCAgent):
         )
         return self.last_trajectory[1][0].flatten()
 
-
 class RewardAgent(MPCAgent):
     def __init__(
         self,
@@ -255,6 +251,10 @@ class RewardAgent(MPCAgent):
             self._add_rollouts(get_action=self.get_action)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        def compose(a, b):
+            def ab(*args, **kwargs):
+                return b(a(*args, **kwargs))
+            return ab
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         obs = state_and_obs['state']
         if self.last_trajectory is not None:

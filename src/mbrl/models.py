@@ -193,7 +193,7 @@ class ModelWithReward(nn.Module):
                         unnormalize_state=None,
                         unnormalize_reward=None
                     )
-                    loss = loss + criterion(next_states_hat, next_states) + criterion(rewards_hat, rewards)
+                    loss = loss + criterion(next_states_hat, next_states) + criterion(rewards_hat, rewards.unsqueeze(dim=1))
 
                 optimizer.zero_grad()
                 loss.backward(retain_graph=True)

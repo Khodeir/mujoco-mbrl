@@ -117,7 +117,7 @@ class EnvWrapper(dm_env.Environment):
         observations.append(observation)
         rewards.append(None)
         for timestep in range(num_steps):
-            action = get_action(state)
+            action = get_action(dict(state=state, observation=observation))
             actions.append(action)
             state, observation, reward, done = self.step(action)
             states.append(state)
