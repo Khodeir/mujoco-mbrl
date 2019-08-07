@@ -62,19 +62,22 @@ class EnvWrapper(dm_env.Environment):
         return weights
 
     def reset(self):
-        return self._env.reset()
+        t = self._env.reset()
+        return self._parse_timestep(t)
 
     def observation_spec(self):
         return self._env.observation_spec()
 
     def action_spec(self):
         return self._action_spec
-
+    
     def step(
         self, action: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor], bool]:
         t = self._env.step(np.array(action))
-
+        return self._parse_timestep(t)
+       
+    def _parse_timestep(self, t) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Optional[torch.Tensor], bool]:
         if self._flat_obs:
             obs = torch.tensor(t.observation['observations'], dtype=torch.float32)
         else:
@@ -88,25 +91,27 @@ class EnvWrapper(dm_env.Environment):
             else None
         )
         return self.get_state(), obs, reward, t.last()
-
     def get_rollout(
         self,
         num_steps: int,
-        get_action: Callable[[torch.Tensor], torch.Tensor] = None,
+        get_action: Callable[[Dict[str, torch.Tensor]], torch.Tensor] = None,
         step_callback: Optional[Callable] = None,
+        set_state: bool = True
     ) -> Rollout:
         if get_action is None:
             get_action = lambda state: self.sample_action()
 
         states, actions, observations, rewards = [], [], [], []
 
-        _ = self.reset()
-        initial_state = self.sample_state()
-        with self._env.physics.reset_context():
-            self._env.physics.set_state(initial_state)
+        state, observation, _, _ = self.reset()
+        if set_state:
+            initial_state = self.sample_state()
+            with self._env.physics.reset_context():
+                self._env.physics.set_state(initial_state)
 
-        state = self.get_state()
-        action = get_action(state)
+            state = self.get_state()
+            observation = None
+        action = get_action(dict(state=state, observation=observation))
         state, observation, _, _ = self.step(action)
         states.append(state)
         observations.append(observation)

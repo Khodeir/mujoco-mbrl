@@ -6,7 +6,7 @@ import numpy as np
 from typing import Callable, Optional, List, Tuple
 
 Trajectory = Tuple[List[torch.Tensor], List[torch.Tensor]]
-ScalarTorchFunc = Callable[[torch.Tensor], float]
+ScalarTorchFunc = Callable[[torch.Tensor, torch.Tensor], float]
 TensorTorchFunc = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 TorchFunc = Callable[[int], torch.Tensor]
 
@@ -16,8 +16,7 @@ class ModelPlanner:
     def plan(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         initial_trajectory: Optional[Trajectory] = None,
@@ -33,8 +32,7 @@ class GradientDescentPlanner(ModelPlanner):
     def plan(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         initial_trajectory: Optional[Trajectory] = None,
@@ -49,8 +47,7 @@ class GradientDescentPlanner(ModelPlanner):
         return GradientDescentPlanner._plan(
             initial_state=initial_state,
             model=model,
-            state_cost=state_cost,
-            action_cost=action_cost,
+            cost=cost,
             sample_action=sample_action,
             horizon=horizon,
             initial_trajectory=initial_trajectory,
@@ -62,8 +59,7 @@ class GradientDescentPlanner(ModelPlanner):
     def _plan(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         initial_trajectory: Optional[Trajectory],
@@ -80,8 +76,7 @@ class GradientDescentPlanner(ModelPlanner):
 
         trajectory = GradientDescentPlanner._optimize_trajectory(
             initial_state=initial_state,
-            state_cost=state_cost,
-            action_cost=action_cost,
+            cost=cost,
             model=model,
             initial_trajectory=initial_trajectory,
             num_iterations=num_iterations,
@@ -107,8 +102,7 @@ class GradientDescentPlanner(ModelPlanner):
     def _optimize_trajectory(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         initial_trajectory: Trajectory,
         num_iterations: int,
         stop_condition: float,
@@ -129,7 +123,8 @@ class GradientDescentPlanner(ModelPlanner):
             # Loop forwards, accumulate costs
             for i in range(horizon):
                 states_tensor[i+1] = model(states_tensor[i:i+1], actions_tensor[i:i+1])
-            loss = torch.sum(state_cost(states_tensor[1:]) + action_cost(actions_tensor))
+
+            loss = torch.sum(cost(states_tensor[1:], actions_tensor))
             loss.backward(retain_graph=True)
             old_actions_tensor = actions_tensor.clone().detach()
             # Update actions
@@ -149,8 +144,7 @@ class RandomShootingPlanner(ModelPlanner):
     def plan(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         initial_trajectory: Optional[Trajectory] = None,
@@ -162,8 +156,7 @@ class RandomShootingPlanner(ModelPlanner):
         return RandomShootingPlanner._plan(
             initial_state,
             model,
-            state_cost,
-            action_cost,
+            cost,
             sample_action,
             horizon,
             initial_trajectory,
@@ -174,8 +167,7 @@ class RandomShootingPlanner(ModelPlanner):
     def _plan(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         initial_trajectory: Optional[Trajectory],
@@ -187,8 +179,7 @@ class RandomShootingPlanner(ModelPlanner):
             horizon=horizon,
             sample_action=sample_action,
             model=model,
-            state_cost=state_cost,
-            action_cost=action_cost,
+            cost=cost,
         )
         chosen_trajectory_idx = np.argmin(trajectory_costs)
         trajectory = trajectories[chosen_trajectory_idx]
@@ -199,8 +190,7 @@ class RandomShootingPlanner(ModelPlanner):
     def _generate_trajectories(
         initial_state: torch.Tensor,
         model: TensorTorchFunc,
-        state_cost: ScalarTorchFunc,
-        action_cost: ScalarTorchFunc,
+        cost: ScalarTorchFunc,
         sample_action: TorchFunc,
         horizon: int,
         num_trajectories: int,
@@ -217,7 +207,7 @@ class RandomShootingPlanner(ModelPlanner):
             actions = action_list[i * num_trajectories : (i + 1) * num_trajectories]
             # infer with model
             state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(states, actions)
-        costs = (state_cost(state_list) + action_cost(action_list)).view(horizon, num_trajectories).sum(0).detach().numpy()
+        costs = cost(state_list, action_list).view(horizon, num_trajectories).sum(0).detach().numpy()
         trajectories = []
         state_list = state_list.view((horizon, num_trajectories, -1))
         action_list = action_list.view((horizon, num_trajectories, -1))

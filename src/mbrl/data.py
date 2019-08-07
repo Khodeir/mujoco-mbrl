@@ -271,6 +271,15 @@ class TransitionsDataset(Dataset):
         if not self._normalise:
             return action
         return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
+    def unnormalize_reward(self, reward):
+        if not self._normalise:
+            return reward
+        return (reward * self._stats["rewards"]["std"]) + self._stats["rewards"]["mean"]
+
+    def normalize_reward(self, reward):
+        if not self._normalise:
+            return reward
+        return (reward - self._stats["rewards"]["mean"]) / self._stats["rewards"]["std"]
 
     @staticmethod
     def _get_stats(array):

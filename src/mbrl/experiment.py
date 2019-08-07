@@ -65,8 +65,57 @@ def Environment(v):
     return env_wrappers.EnvWrapper.load(env_name, task_name)
 
 
+class Agent(Enum):
+    GoalStateAgent = "gs"
+    RewardPredictingAgent = "rw"
+
+    def construct(
+        self,
+        environment,
+        planner,
+        model,
+        horizon,
+        optimizer,
+        rollout_length,
+        num_rollouts_per_iteration,
+        num_train_iterations,
+        writer,
+    ):
+        if self is Agent.GoalStateAgent:
+            action_cost = models.CoshLoss()
+            state_cost = models.SmoothAbsLoss(
+                weights=environment.get_goal_weights(), goal_state=None
+            )
+            agent = agents.GoalStateAgent(
+                environment=environment,
+                planner=planner,
+                model=model,
+                horizon=config["horizon"],
+                action_cost=action_cost,
+                state_cost=state_cost,
+                optimizer=optimizer,
+                rollout_length=config["rollout_length"],
+                num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
+                num_train_iterations=config["num_train_iterations"],
+                writer=writer,
+            )
+            return agent
+        if self is Agent.RewardPredictingAgent:
+            agent = agents.RewardAgent(
+                environment=environment,
+                planner=planner,
+                model=model,
+                horizon=config["horizon"],
+                optimizer=optimizer,
+                rollout_length=config["rollout_length"],
+                num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
+                num_train_iterations=config["num_train_iterations"],
+                writer=writer,
+            )
+            return agent
 CONFIG_DEF = (
     {"name": "exp_dir", "type": str},
+    {"name": "agent", "type": Agent},
     {"name": "environment", "type": Environment},
     {"name": "planner", "type": Planner, "choices": list(Planner)},
     {"name": "model", "type": Model, "choices": list(Model)},
@@ -88,28 +137,19 @@ def main(config):
     planner = config["planner"].construct()
     model = config["model"].construct(environment)
     optimizer = config["optimizer"].construct(model)
-
-    action_cost = models.CoshLoss()
-    state_cost = models.SmoothAbsLoss(
-        weights=environment.get_goal_weights(), goal_state=None
-    )
-
-    agent = agents.MPCAgent(
+    agent = config['agent'].construct(
         environment=environment,
         planner=planner,
         model=model,
         horizon=config["horizon"],
-        action_cost=action_cost,
-        state_cost=state_cost,
         optimizer=optimizer,
         rollout_length=config["rollout_length"],
         num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
         num_train_iterations=config["num_train_iterations"],
         writer=writer,
     )
-
     agent.train()
-    agents.Agent.save(agent, os.path.join(config["exp_dir"], "agent_final.pkl"))
+    agents.save(agent, os.path.join(config["exp_dir"], "agent_final.pkl"))
 
 
 def parse_args(config_def=CONFIG_DEF):
