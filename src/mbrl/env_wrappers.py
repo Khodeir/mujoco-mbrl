@@ -7,7 +7,8 @@ import dm_env
 from src.mbrl.data import Rollout
 from src.mbrl.utils import Recorder
 
-
+# TODO: Need to make set_goal consistent with observation_dim
+# or at least have parallel implementations that are.
 class EnvWrapper(dm_env.Environment):
     def __init__(self, env, flat_obs):
         self._env = env
@@ -111,9 +112,9 @@ class EnvWrapper(dm_env.Environment):
                 self._env.physics.set_state(initial_state)
 
             state = self.get_state()
-            observation = None
-        action = get_action(dict(state=state, observation=observation))
-        state, observation, _, _ = self.step(action)
+
+        # action = get_action(dict(state=state, observation=observation))
+        state, observation, _, _ = self.step(self.sample_action())
         states.append(state)
         observations.append(observation)
         rewards.append(None)
@@ -194,11 +195,11 @@ class Reacher(EnvWrapper):
         return weights
 
     def set_goal(self) -> torch.Tensor:
-        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
+        goal_state = torch.zeros(self.observation_dim, dtype=torch.float32)
         goal_state[0] = np.random.uniform(low=-np.pi, high=np.pi)
         goal_state[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
-        goal_state[-1] = 0
-        goal_state[-2] = 0
+        goal_state[2] = 0
+        goal_state[3] = 0
 
         a = 0.12 * np.cos(goal_state[1])
         b = 0.12 * np.sin(goal_state[1])
@@ -206,6 +207,8 @@ class Reacher(EnvWrapper):
         mag = np.sqrt((0.12 + a) ** 2 + b ** 2)
         target_x = mag * np.cos(theta)
         target_y = mag * np.sin(theta)
+        goal_state[4] = target_x
+        goal_state[5] = target_y
         self._env.physics.named.model.geom_pos["target", "x"] = target_x
         self._env.physics.named.model.geom_pos["target", "y"] = target_y
         return goal_state

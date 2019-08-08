@@ -3,7 +3,7 @@ from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Sampler
 import numpy as np
-
+from enum import Enum
 
 class Rollout:
     def __init__(self, states, observations, actions, rewards):
@@ -47,12 +47,6 @@ class Rollout:
     @property
     def flat_observations(self):
         return self._flat_obs
-
-    def get_sum_of_state_costs(self, state_cost):
-        return sum(map(state_cost, self.states))
-
-    def get_sum_of_action_costs(self, action_costs):
-        return sum(map(action_costs, self.actions[:-1]))
 
     def __len__(self):
         return self._length
@@ -127,14 +121,18 @@ class Rollout:
 
         return rollout[1:-1]
 
-
+class TransitionsDatasetDataMode(Enum):
+    state_only = 'state_only'
+    obs_only = 'obs_only'
+    both = 'both'
 class TransitionsDataset(Dataset):
     def __init__(
         self,
         rollouts: Optional[List[Rollout]] = None,
         transitions_capacity: int = int(1e6),
         horizon: int = 1,
-        normalise=True
+        normalise=True,
+        data_mode=TransitionsDatasetDataMode.both
     ):
         super().__init__()
         self.capacity = transitions_capacity
@@ -149,10 +147,14 @@ class TransitionsDataset(Dataset):
             "reward": None,
         }
         self._normalise = normalise
+        self._data_mode = data_mode
 
         # This check exists so that an empty dataset can be instantiated
         if rollouts is not None:
             self.add_rollouts(rollouts)
+    
+    def set_data_mode(self, data_mode):
+        self._data_mode = TransitionsDatasetDataMode(data_mode)
 
     def add_rollouts(self, rollouts):
         if self._flat_obs is None:
@@ -211,12 +213,19 @@ class TransitionsDataset(Dataset):
             start_idx = np.random.randint(0, len(rollout) - self.horizon)
 
         stats = self._stats if self._normalise else None
-        transition = rollout.get_multistep_transitions(
+        (inputs, outputs) = rollout.get_multistep_transitions(
             start_idx, self.horizon, stats=stats
         )
-
-        return transition
-
+        if self._data_mode == TransitionsDatasetDataMode.state_only:
+            inputs = [ inp[::2] for inp in inputs]
+            outputs =  [outp[:-1] for outp in outputs]
+        elif self._data_mode == TransitionsDatasetDataMode.obs_only:
+            inputs = [ inp[1::] for inp in inputs]
+            outputs =  [outp[::2] for outp in outputs]
+        elif self._data_mode is not TransitionsDatasetDataMode.both:
+            raise ValueError('Unknown mode.')
+        return inputs, outputs
+        
     def _update_stats(self):
         stats = {}
         all_states, all_actions, all_rewards = [], [], []

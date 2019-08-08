@@ -1,7 +1,7 @@
 import torch
 import pickle
 
-from src.mbrl.data import TransitionsDataset
+from src.mbrl.data import TransitionsDataset, TransitionsDatasetDataMode
 from src.mbrl.env_wrappers import EnvWrapper
 from src.mbrl.planners import ModelPlanner
 from src.mbrl.models import DynamicsModel, ModelWithReward
@@ -86,8 +86,14 @@ class GoalStateAgent(MPCAgent):
         self.action_cost = action_cost
         self.state_cost = state_cost
 
+        self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
+        self.normalize_state = self.dataset.normalize_obs
+        self.unnormalize_state = self.dataset.unnormalize_obs
+        self.normalize_action = self.dataset.normalize_action
+
     def _reset_goal(self):
         goal_state = self.environment.set_goal()
+        print(goal_state.shape)
         self.state_cost.set_goal_state(goal_state)
 
     def _add_rollouts(self, get_action=None, num_rollouts=None):
@@ -114,7 +120,7 @@ class GoalStateAgent(MPCAgent):
         )
 
         state_costs = [
-            rollout.get_sum_of_state_costs(self.state_cost) for rollout in rollouts
+            sum(map(self.state_cost, rollout.observations)) for rollout in rollouts
         ]
         self.writer.add_scalar(
             "AvgRolloutStateCosts/{}".format(rollout_type),
@@ -128,7 +134,7 @@ class GoalStateAgent(MPCAgent):
         )
 
         action_costs = [
-            rollout.get_sum_of_action_costs(self.action_cost) for rollout in rollouts
+            sum(map(self.action_cost, rollout.actions)) for rollout in rollouts
         ]
         self.writer.add_scalar(
             "AvgRolloutActionCosts/{}".format(rollout_type),
@@ -155,7 +161,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts(num_rollouts=100)
+        self._add_rollouts(num_rollouts=20)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -168,7 +174,6 @@ class GoalStateAgent(MPCAgent):
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
-        state = state_and_obs['state']
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
@@ -177,12 +182,12 @@ class GoalStateAgent(MPCAgent):
         else:
             initial_trajectory = None
         self.last_trajectory = self.planner.plan(
-            initial_state=state,
+            initial_state=state_and_obs["observation"],
             model=partial(
                 self.model,
-                normalize_state=self.dataset.normalize_state,
-                normalize_action=self.dataset.normalize_action,
-                unnormalize=self.dataset.unnormalize_state,
+                normalize_state=self.normalize_state,
+                normalize_action=self.normalize_action,
+                unnormalize_state=self.unnormalize_state,
             ),
             cost=lambda state, action: self.state_cost(state) + self.action_cost(action),
             sample_action=self.environment.sample_action,
@@ -216,6 +221,12 @@ class RewardAgent(MPCAgent):
             num_train_iterations=num_train_iterations,
             writer=writer,
         )
+        self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
+        self.normalize_state = self.dataset.normalize_obs
+        self.unnormalize_state = self.dataset.unnormalize_obs
+        self.normalize_action = self.dataset.normalize_action
+        self.normalize_reward = self.dataset.normalize_reward
+        self.unnormalize_reward = self.dataset.unnormalize_reward
 
     def _add_rollouts(self, get_action=None, num_rollouts=None):
         rollout_type = "policy" if get_action else "random"
@@ -242,7 +253,7 @@ class RewardAgent(MPCAgent):
 
     def train(self):
         logger.info("Starting outer training loop.")
-        self._add_rollouts()
+        self._add_rollouts(num_rollouts=20)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             self.train_iterations = iteration
@@ -257,7 +268,6 @@ class RewardAgent(MPCAgent):
                 return b(a(*args, **kwargs))
             return ab
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
-        obs = state_and_obs['observation']
 
         if self.last_trajectory is not None:
             initial_trajectory = (
@@ -267,24 +277,24 @@ class RewardAgent(MPCAgent):
         else:
             initial_trajectory = None
         self.last_trajectory = self.planner.plan(
-            initial_state=obs,
+            initial_state=state_and_obs["observation"],
             model=compose(
                 partial(
                     self.model,
-                    normalize_obs=self.dataset.normalize_obs,
-                    normalize_action=self.dataset.normalize_action,
-                    unnormalize_obs=self.dataset.unnormalize_obs,
-                    unnormalize_reward=self.dataset.unnormalize_reward,
+                    normalize_state=self.normalize_state,
+                    normalize_action=self.normalize_action,
+                    unnormalize_state=self.unnormalize_state,
+                    unnormalize_reward=self.unnormalize_reward,
                 ),
                 itemgetter(0)
             ),
             cost=compose(
                 partial(
                     self.model,
-                    normalize_obs=self.dataset.normalize_obs,
-                    normalize_action=self.dataset.normalize_action,
-                    unnormalize_obs=self.dataset.unnormalize_obs,
-                    unnormalize_reward=self.dataset.unnormalize_reward,
+                    normalize_state=self.normalize_state,
+                    normalize_action=self.normalize_action,
+                    unnormalize_state=self.unnormalize_state,
+                    unnormalize_reward=self.unnormalize_reward,
                 ),
                 itemgetter(1)
             ),

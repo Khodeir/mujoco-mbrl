@@ -16,7 +16,7 @@ class DynamicsModel(nn.Module):
         action,
         normalize_action=None,
         normalize_state=None,
-        unnormalize=None,
+        unnormalize_state=None,
     ):
         if normalize_action:
             action = normalize_action(action)
@@ -24,9 +24,8 @@ class DynamicsModel(nn.Module):
             state = normalize_state(state)
         x = torch.cat([state, action], dim=1)
         out = self._forward(x)
-        if unnormalize:
-            out = unnormalize(out)
-
+        if unnormalize_state:
+            out = unnormalize_state(out)
         return out
 
     def evaluate_model(self, dataset, batch_size, criterion=None):
@@ -38,15 +37,15 @@ class DynamicsModel(nn.Module):
         evals = []
         for inputs, outputs in eval_data:
             for (
-                (states, observations, actions),
-                (rewards, next_states, next_observations),
+                (states, actions),
+                (rewards, next_states),
             ) in zip(inputs, outputs):
                 next_states_hat = self.forward(
                     states,
                     actions,
                     normalize_action=None,
                     normalize_state=None,
-                    unnormalize=None,
+                    unnormalize_state=None,
                 )
                 evals.append(criterion(next_states_hat, next_states).detach().numpy())
         return evals
@@ -70,15 +69,15 @@ class DynamicsModel(nn.Module):
             for inputs, outputs in train_data:
                 loss = 0
                 for (
-                    (states, observations, actions),
-                    (rewards, next_states, next_observations),
+                    (states, actions),
+                    (rewards, next_states),
                 ) in zip(inputs, outputs):
                     next_states_hat = self.forward(
                         states,
                         actions,
                         normalize_action=None,
                         normalize_state=None,
-                        unnormalize=None,
+                        unnormalize_state=None,
                     )
                     loss = loss + criterion(next_states_hat, next_states)
 
@@ -124,44 +123,44 @@ class LinearModel(DynamicsModel):
 
 
 class ModelWithReward(nn.Module):
-    def __init__(self, obs_dim, action_dim, hidden_units=200):
+    def __init__(self, state_dim, action_dim, hidden_units=200):
         super(ModelWithReward, self).__init__()
         self.train_iterations = 0
-        self.linear1 = nn.Linear(obs_dim + action_dim, hidden_units)
+        self.linear1 = nn.Linear(state_dim + action_dim, hidden_units)
         self.linear2 = nn.Linear(hidden_units, hidden_units)
-        self.linear3 = nn.Linear(hidden_units, obs_dim)
+        self.linear3 = nn.Linear(hidden_units, state_dim)
         self.linear4 = nn.Linear(hidden_units, 1)
         self.activation_fn = nn.ReLU()
 
     def _forward(self, x):
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))
-        obs = self.linear3(x)
+        state = self.linear3(x)
         reward = self.linear4(x)
 
-        return obs, reward
+        return state, reward
 
     def forward(
         self,
-        observation,
+        state,
         action,
-        normalize_obs=None,
-        unnormalize_obs=None,
+        normalize_state=None,
+        unnormalize_state=None,
         normalize_action=None,
         unnormalize_reward=None
     ):
         if normalize_action:
             action = normalize_action(action)
-        if normalize_obs:
-            observation = normalize_obs(observation)
-        x = torch.cat([observation, action], dim=1)
-        observation, reward = self._forward(x)
+        if normalize_state:
+            state = normalize_state(state)
+        x = torch.cat([state, action], dim=1)
+        state, reward = self._forward(x)
         if unnormalize_reward:
             reward = unnormalize_reward(reward)
-        if unnormalize_obs:
-            observation = unnormalize_obs(observation)
+        if unnormalize_state:
+            state = unnormalize_state(state)
 
-        return observation, reward
+        return state, reward
 
     def train_model(
         self,
@@ -181,23 +180,23 @@ class ModelWithReward(nn.Module):
         for epoch in range(num_epochs):
             for inputs, outputs in train_data:
                 loss = 0
-                total_obs_loss, total_rew_loss = 0, 0
+                total_state_loss, total_rew_loss = 0, 0
                 for (
-                    (states, observations, actions),
-                    (rewards, next_states, next_observations),
+                    (states, actions),
+                    (rewards, next_states),
                 ) in zip(inputs, outputs):
-                    next_obs_hat, rewards_hat = self.forward(
-                        observations,
+                    next_state_hat, rewards_hat = self.forward(
+                        states,
                         actions,
                         normalize_action=None,
-                        normalize_obs=None,
-                        unnormalize_obs=None,
+                        normalize_state=None,
+                        unnormalize_state=None,
                         unnormalize_reward=None
                     )
-                    obs_loss = criterion(next_obs_hat, next_observations)
+                    state_loss = criterion(next_state_hat, next_states)
                     rew_loss = criterion(rewards_hat, rewards.unsqueeze(dim=1))
-                    loss = loss + obs_loss + rew_loss
-                    total_obs_loss += obs_loss
+                    loss = loss + state_loss + rew_loss
+                    total_state_loss += state_loss
                     total_rew_loss += rew_loss
 
                 optimizer.zero_grad()
@@ -207,7 +206,7 @@ class ModelWithReward(nn.Module):
 
                 if writer is not None:
                     writer.add_scalar(
-                        "loss/obs/{}".format(self.train_iterations), total_obs_loss, num_iters
+                        "loss/state/{}".format(self.train_iterations), total_state_loss, num_iters
                     )
                     writer.add_scalar(
                         "loss/reward/{}".format(self.train_iterations), total_rew_loss, num_iters

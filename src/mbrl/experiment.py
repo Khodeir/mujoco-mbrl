@@ -34,9 +34,9 @@ class Model(Enum):
 
     def construct(self, environment):
         if self is Model.NeuralNet:
-            return models.Model(environment.state_dim, environment.action_dim)
+            return models.Model(environment.observation_dim, environment.action_dim)
         if self is Model.Linear:
-            return models.LinearModel(environment.state_dim, environment.action_dim)
+            return models.LinearModel(environment.observation_dim, environment.action_dim)
         if self is Model.ModelWithReward:
             return models.ModelWithReward(environment.observation_dim, environment.action_dim, hidden_units=50)
 
@@ -90,7 +90,9 @@ class Agent(Enum):
         if self is Agent.GoalStateAgent:
             action_cost = models.CoshLoss()
             state_cost = models.SmoothAbsLoss(
-                weights=environment.get_goal_weights(), goal_state=None
+                # weights=environment.get_goal_weights(),
+                weights=1,
+                goal_state=None
             )
             agent = agents.GoalStateAgent(
                 environment=environment,
