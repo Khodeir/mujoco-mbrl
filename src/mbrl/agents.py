@@ -134,7 +134,7 @@ class GoalStateAgent(MPCAgent):
         )
 
         action_costs = [
-            sum(map(self.action_cost, rollout.actions)) for rollout in rollouts
+            sum(map(self.action_cost, rollout.actions[:-1])) for rollout in rollouts
         ]
         self.writer.add_scalar(
             "AvgRolloutActionCosts/{}".format(rollout_type),
