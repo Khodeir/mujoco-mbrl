@@ -107,11 +107,12 @@ class EnvWrapper(dm_env.Environment):
 
         state, observation, _, _ = self.reset()
         if set_state:
-            initial_state = self.sample_state()
-            with self._env.physics.reset_context():
-                self._env.physics.set_state(initial_state)
+            pass
+            # initial_state = self.sample_state()
+            # with self._env.physics.reset_context():
+            #     self._env.physics.set_state(initial_state)
 
-            state = self.get_state()
+            # state = self.get_state()
 
         # action = get_action(dict(state=state, observation=observation))
         state, observation, _, _ = self.step(self.sample_action())
@@ -185,11 +186,11 @@ class Reacher(EnvWrapper):
         return torch.tensor(state, dtype=torch.float32)
 
     def get_goal_weights(self) -> torch.Tensor:
-        weights = super().get_goal_weights()
-
+        weights = torch.zeros(self.observation_dim)
         weights[0:2] = self._state_penalty
+        weights[4:] = self._state_penalty
 
-        weights[2:] = (
+        weights[2:4] = (
             self._state_penalty / 20.0
         )  # Penalties on the velocities act as dampers
         return weights
