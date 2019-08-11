@@ -32,9 +32,8 @@ def compute_jacobian(inputs, output):
 
 
 class Recorder:
-    def __init__(self, final_path):
-        self.final_path = final_path
-
+    def __init__(self):
+        self.frames = []
     def __enter__(self):
         self.tmpdir = TemporaryDirectory()
         return self
@@ -44,11 +43,12 @@ class Recorder:
 
     def record_frame(self, image_data, timestep):
         img = Image.fromarray(image_data, 'RGB')
+        self.frames.append(img)
         fname = os.path.join(self.tmpdir.name, 'frame-%.10d.png' % timestep)
         img.save(fname)
 
-    def make_movie(self):
+    def make_movie(self, final_path):
         frames = os.path.join(self.tmpdir.name, 'frame-%010d.png')
-        movie = '{}.mp4'.format(self.final_path)
+        movie = '{}.mp4'.format(final_path)
         string = "ffmpeg -framerate 24 -y -i {} -r 30 -pix_fmt yuv420p {}".format(frames, movie)
         subprocess.call(string.split())

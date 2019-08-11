@@ -12,6 +12,7 @@ import numpy as np
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
 from typing import Callable, Dict
+
 ScalarTorchFunc = Callable[[torch.Tensor], float]
 
 
@@ -35,6 +36,7 @@ class MPCAgent:
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
         writer: SummaryWriter,
+        base_path: str,
     ):
         self.environment = environment
         self.planner = planner
@@ -48,12 +50,69 @@ class MPCAgent:
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
         self.last_trajectory = None
+        self.base_path = base_path
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
     def train(self):
         raise NotImplementedError
+
+    def _add_rollouts(
+        self, get_action=None, num_rollouts=None, set_state=False, record_last=True
+    ):
+        rollout_type = "policy" if get_action else "random"
+        logger.info(
+            "Generating {} {} rollouts of {} length.".format(
+                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+            )
+        )
+        rollouts = []
+        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
+        for i in range(num_rollouts):
+            self.last_trajectory = None
+            if record_last and i == num_rollouts - 1:
+                rollouts.append(
+                    self.environment.record_rollout(
+                        num_steps=self.rollout_length,
+                        get_action=get_action,
+                        mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.num_train_iterations)),
+                        set_state=set_state,
+                    )
+                )
+                continue
+            rollouts.append(
+                self.environment.get_rollout(
+                    self.rollout_length, get_action, set_state=set_state
+                )
+            )
+
+        self.dataset.add_rollouts(rollouts)
+        self._record_metrics(rollouts, rollout_type)
+
+    def _record_metrics(self, rollouts, rollout_type):
+        sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
+        self.writer.add_scalar(
+            "AvgRolloutRewards/{}".format(rollout_type),
+            np.mean(sum_rewards),
+            self.train_iterations,
+        )
+        self.writer.add_histogram(
+            "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
+        )
+        for rollout in rollouts:
+            if hasattr(rollout, "frames"):
+                self.writer.add_video(
+                    "LastRollout/{}".format(rollout_type),
+                    torch.stack(
+                        [
+                            torch.from_numpy(np.array(f).transpose(2, 0, 1))
+                            for f in rollout.frames
+                        ],
+                        dim=0,
+                    ).unsqueeze(0),
+                    self.train_iterations,
+                )
 
 
 class GoalStateAgent(MPCAgent):
@@ -93,32 +152,10 @@ class GoalStateAgent(MPCAgent):
 
     def _reset_goal(self):
         goal_state = self.environment.set_goal()
-        print(goal_state.shape)
         self.state_cost.set_goal_state(goal_state)
 
-    def _add_rollouts(self, get_action=None, num_rollouts=None):
-        rollout_type = "policy" if get_action else "random"
-        logger.info(
-            "Generating {} {} rollouts of {} length.".format(
-                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
-            )
-        )
-        rollouts = []
-        for _ in range(num_rollouts or self.num_rollouts_per_iteration):
-            self.last_trajectory = None
-            rollouts.append(self.environment.get_rollout(self.rollout_length, get_action))
-        self.dataset.add_rollouts(rollouts)
-
-        sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
-        self.writer.add_scalar(
-            "AvgRolloutRewards/{}".format(rollout_type),
-            np.mean(sum_rewards),
-            self.train_iterations,
-        )
-        self.writer.add_histogram(
-            "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
-        )
-
+    def _record_metrics(self, rollouts, rollout_type):
+        super()._record_metrics(rollouts, rollout_type)
         state_costs = [
             sum(map(self.state_cost, rollout.observations)) for rollout in rollouts
         ]
@@ -165,6 +202,7 @@ class GoalStateAgent(MPCAgent):
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
+
             self._reset_goal()
             self.train_iterations = iteration
             self.model.train_model(
@@ -189,7 +227,8 @@ class GoalStateAgent(MPCAgent):
                 normalize_action=self.normalize_action,
                 unnormalize_state=self.unnormalize_state,
             ),
-            cost=lambda state, action: self.state_cost(state) + self.action_cost(action),
+            cost=lambda state, action: self.state_cost(state)
+            + self.action_cost(action),
             sample_action=self.environment.sample_action,
             horizon=self.horizon,
             initial_trajectory=initial_trajectory,
@@ -228,29 +267,6 @@ class RewardAgent(MPCAgent):
         self.normalize_reward = self.dataset.normalize_reward
         self.unnormalize_reward = self.dataset.unnormalize_reward
 
-    def _add_rollouts(self, get_action=None, num_rollouts=None):
-        rollout_type = "policy" if get_action else "random"
-        logger.info(
-            "Generating {} {} rollouts of {} length.".format(
-                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
-            )
-        )
-        rollouts = []
-        for _ in range(num_rollouts or self.num_rollouts_per_iteration):
-            self.last_trajectory = None
-            rollouts.append(self.environment.get_rollout(self.rollout_length, get_action, set_state=False))
-        self.dataset.add_rollouts(rollouts)
-
-        sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
-        self.writer.add_scalar(
-            "AvgRolloutRewards/{}".format(rollout_type),
-            np.mean(sum_rewards),
-            self.train_iterations,
-        )
-        self.writer.add_histogram(
-            "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
-        )
-
     def train(self):
         logger.info("Starting outer training loop.")
         self._add_rollouts(num_rollouts=20)
@@ -266,7 +282,9 @@ class RewardAgent(MPCAgent):
         def compose(a, b):
             def ab(*args, **kwargs):
                 return b(a(*args, **kwargs))
+
             return ab
+
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
 
         if self.last_trajectory is not None:
@@ -286,7 +304,7 @@ class RewardAgent(MPCAgent):
                     unnormalize_state=self.unnormalize_state,
                     unnormalize_reward=self.unnormalize_reward,
                 ),
-                itemgetter(0)
+                itemgetter(0),
             ),
             cost=compose(
                 partial(
@@ -296,7 +314,7 @@ class RewardAgent(MPCAgent):
                     unnormalize_state=self.unnormalize_state,
                     unnormalize_reward=self.unnormalize_reward,
                 ),
-                itemgetter(1)
+                itemgetter(1),
             ),
             sample_action=self.environment.sample_action,
             horizon=self.horizon,

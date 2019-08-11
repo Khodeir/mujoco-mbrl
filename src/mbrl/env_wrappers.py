@@ -98,7 +98,7 @@ class EnvWrapper(dm_env.Environment):
         num_steps: int,
         get_action: Callable[[Dict[str, torch.Tensor]], torch.Tensor] = None,
         step_callback: Optional[Callable] = None,
-        set_state: bool = True
+        set_state: bool = False
     ) -> Rollout:
         if get_action is None:
             get_action = lambda state: self.sample_action()
@@ -107,12 +107,11 @@ class EnvWrapper(dm_env.Environment):
 
         state, observation, _, _ = self.reset()
         if set_state:
-            pass
-            # initial_state = self.sample_state()
-            # with self._env.physics.reset_context():
-            #     self._env.physics.set_state(initial_state)
+            initial_state = self.sample_state()
+            with self._env.physics.reset_context():
+                self._env.physics.set_state(initial_state)
 
-            # state = self.get_state()
+            state = self.get_state()
 
         # action = get_action(dict(state=state, observation=observation))
         state, observation, _, _ = self.step(self.sample_action())
@@ -138,14 +137,17 @@ class EnvWrapper(dm_env.Environment):
             rewards=rewards[1:],
         )
 
-    def record_rollout(self, mp4path, *args, **kwargs):
-        with Recorder(mp4path) as recorder:
+    def record_rollout(self, *args, mp4path=None, **kwargs):
+        with Recorder() as recorder:
             record_frame = lambda t: recorder.record_frame(
                 self._env.physics.render(camera_id=0), t
             )
             kwargs["step_callback"] = record_frame
-            self.get_rollout(*args, **kwargs)
-            recorder.make_movie()
+            rollout = self.get_rollout(*args, **kwargs)
+            rollout.frames = recorder.frames
+            if mp4path is not None:
+                recorder.make_movie(mp4path)
+        return rollout
 
 
 class PointMass(EnvWrapper):
