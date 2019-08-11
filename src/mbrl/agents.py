@@ -12,7 +12,7 @@ from operator import itemgetter
 import numpy as np
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional
 
 ScalarTorchFunc = Callable[[torch.Tensor], float]
 
@@ -38,6 +38,7 @@ class MPCAgent:
         num_train_iterations: int,
         writer: SummaryWriter,
         base_path: str,
+        dataset: Optional[TransitionsDataset]
     ):
         self.environment = environment
         self.planner = planner
@@ -47,12 +48,13 @@ class MPCAgent:
         self.num_rollouts_per_iteration = num_rollouts_per_iteration
         self.num_train_iterations = num_train_iterations
         self.optimizer = optimizer
-        self.dataset = TransitionsDataset(transitions_capacity=10000)
+        self.dataset = TransitionsDataset(transitions_capacity=10000) if dataset is not None else dataset
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
         self.last_trajectory = None
         self.base_path = base_path
         self.training_goal_state = None
+        self.num_initial_rollouts = 20
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -134,6 +136,7 @@ class GoalStateAgent(MPCAgent):
         action_cost: ScalarTorchFunc,
         state_cost: ScalarTorchFunc,
         base_path: str,
+        dataset: Optional[TransitionsDataset]
     ):
         super().__init__(
             environment=environment,
@@ -145,7 +148,8 @@ class GoalStateAgent(MPCAgent):
             num_rollouts_per_iteration=num_rollouts_per_iteration,
             num_train_iterations=num_train_iterations,
             writer=writer,
-            base_path=base_path
+            base_path=base_path,
+            dataset=dataset
         )
 
         self.action_cost = action_cost
@@ -204,7 +208,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts(num_rollouts=20)
+        self._add_rollouts(num_rollouts=self.num_initial_rollouts)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -255,6 +259,7 @@ class RewardAgent(MPCAgent):
         num_train_iterations: int,
         writer: SummaryWriter,
         base_path: str,
+        dataset: Optional[TransitionsDataset]
     ):
         super().__init__(
             environment=environment,
@@ -277,7 +282,7 @@ class RewardAgent(MPCAgent):
 
     def train(self):
         logger.info("Starting outer training loop.")
-        self._add_rollouts(num_rollouts=20)
+        self._add_rollouts(num_rollouts=self.num_initial_rollouts)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             self.train_iterations = iteration

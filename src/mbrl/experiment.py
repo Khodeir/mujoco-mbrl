@@ -6,6 +6,7 @@ from src.mbrl import agents
 from src.mbrl import models
 from src.mbrl import planners
 from src.mbrl import env_wrappers
+from src.mbrl import data
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
 
@@ -111,6 +112,20 @@ class Agent(Enum):
             )
             return agent
         if self is Agent.RewardPredictingAgent:
+            if isinstance(environment, env_wrappers.Reacher):
+                rollouts = []
+                for i in range(20):
+                    initial_state = environment.set_goal_state()
+                    rollout = environment.get_rollout(
+                        num_steps=250,
+                        set_state=True,
+                        goal_state=initial_state,
+                        initial_state=initial_state
+                    )
+                    rollouts.append(rollout)
+                dataset = data.TransitionsDataset(rollouts=rollouts, transitions_capacity=10000)
+            else:
+                dataset = None
             agent = agents.RewardAgent(
                 environment=environment,
                 planner=planner,
@@ -121,8 +136,11 @@ class Agent(Enum):
                 num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
                 num_train_iterations=config["num_train_iterations"],
                 writer=writer,
-                base_path=base_path
+                base_path=base_path,
+                dataset=dataset
             )
+            if isinstance(environment, env_wrappers.Reacher):
+                agent.num_initial_rollouts = 0
             return agent
 
 
