@@ -1,3 +1,4 @@
+import os
 import torch
 import pickle
 
@@ -51,6 +52,7 @@ class MPCAgent:
         self.train_iterations = 0
         self.last_trajectory = None
         self.base_path = base_path
+        self.training_goal_state = None
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
@@ -59,7 +61,7 @@ class MPCAgent:
         raise NotImplementedError
 
     def _add_rollouts(
-        self, get_action=None, num_rollouts=None, set_state=False, record_last=True
+        self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None
     ):
         rollout_type = "policy" if get_action else "random"
         logger.info(
@@ -76,14 +78,16 @@ class MPCAgent:
                     self.environment.record_rollout(
                         num_steps=self.rollout_length,
                         get_action=get_action,
-                        mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.num_train_iterations)),
+                        mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.train_iterations)),
                         set_state=set_state,
+                        goal_state=self.training_goal_state if override_goal_state is None else override_goal_state,
+
                     )
                 )
                 continue
             rollouts.append(
                 self.environment.get_rollout(
-                    self.rollout_length, get_action, set_state=set_state
+                    self.rollout_length, get_action, set_state=set_state, goal_state=self.training_goal_state, initial_state=override_initial_state
                 )
             )
 
@@ -129,6 +133,7 @@ class GoalStateAgent(MPCAgent):
         writer: SummaryWriter,
         action_cost: ScalarTorchFunc,
         state_cost: ScalarTorchFunc,
+        base_path: str,
     ):
         super().__init__(
             environment=environment,
@@ -140,6 +145,7 @@ class GoalStateAgent(MPCAgent):
             num_rollouts_per_iteration=num_rollouts_per_iteration,
             num_train_iterations=num_train_iterations,
             writer=writer,
+            base_path=base_path
         )
 
         self.action_cost = action_cost
@@ -151,8 +157,8 @@ class GoalStateAgent(MPCAgent):
         self.normalize_action = self.dataset.normalize_action
 
     def _reset_goal(self):
-        goal_state = self.environment.set_goal()
-        self.state_cost.set_goal_state(goal_state)
+        self.training_goal_state = self.environment.set_goal()
+        self.state_cost.set_goal_state(self.training_goal_state)
 
     def _record_metrics(self, rollouts, rollout_type):
         super()._record_metrics(rollouts, rollout_type)
@@ -248,6 +254,7 @@ class RewardAgent(MPCAgent):
         num_rollouts_per_iteration: int,
         num_train_iterations: int,
         writer: SummaryWriter,
+        base_path: str,
     ):
         super().__init__(
             environment=environment,
@@ -259,6 +266,7 @@ class RewardAgent(MPCAgent):
             num_rollouts_per_iteration=num_rollouts_per_iteration,
             num_train_iterations=num_train_iterations,
             writer=writer,
+            base_path=base_path
         )
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
         self.normalize_state = self.dataset.normalize_obs

@@ -98,7 +98,9 @@ class EnvWrapper(dm_env.Environment):
         num_steps: int,
         get_action: Callable[[Dict[str, torch.Tensor]], torch.Tensor] = None,
         step_callback: Optional[Callable] = None,
-        set_state: bool = False
+        set_state: bool = False,
+        goal_state: Optional[torch.Tensor] = None,
+        initial_state: Optional[torch.Tensor] = None
     ) -> Rollout:
         if get_action is None:
             get_action = lambda state: self.sample_action()
@@ -107,9 +109,11 @@ class EnvWrapper(dm_env.Environment):
 
         state, observation, _, _ = self.reset()
         if set_state:
-            initial_state = self.sample_state()
+            initial_state = self.sample_state() if initial_state is None else initial_state
             with self._env.physics.reset_context():
                 self._env.physics.set_state(initial_state)
+                if goal_state is not None and hasattr(self, 'set_target'):
+                    self.set_target(goal_state)
 
             state = self.get_state()
 
@@ -197,25 +201,37 @@ class Reacher(EnvWrapper):
         )  # Penalties on the velocities act as dampers
         return weights
 
-    def set_goal(self) -> torch.Tensor:
-        goal_state = torch.zeros(self.observation_dim, dtype=torch.float32)
+    def set_goal_state(self):
+        goal_state = torch.zeros(self.state_dim, dtype=torch.float32)
         goal_state[0] = np.random.uniform(low=-np.pi, high=np.pi)
         goal_state[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
         goal_state[2] = 0
         goal_state[3] = 0
+        return goal_state
 
+    def set_goal_observation(self): 
+        goal_state = self.set_goal_state()
+        target_x, target_y = Reacher.get_xy(goal_state)
+        goal_observation = torch.cat([goal_state, torch.tensor([target_x, target_y])])
+        return goal_observation
+
+    def set_goal(self) -> torch.Tensor:
+        return self.set_goal_observation()
+
+    def set_target(self, state):
+        target_x, target_y = self.get_xy(state)
+        self._env.physics.named.model.geom_pos["target", "x"] = target_x
+        self._env.physics.named.model.geom_pos["target", "y"] = target_y
+
+    @staticmethod
+    def get_xy(goal_state):
         a = 0.12 * np.cos(goal_state[1])
         b = 0.12 * np.sin(goal_state[1])
         theta = goal_state[0] + np.arctan(b / (0.12 + a))
         mag = np.sqrt((0.12 + a) ** 2 + b ** 2)
         target_x = mag * np.cos(theta)
         target_y = mag * np.sin(theta)
-        goal_state[4] = target_x
-        goal_state[5] = target_y
-        self._env.physics.named.model.geom_pos["target", "x"] = target_x
-        self._env.physics.named.model.geom_pos["target", "y"] = target_y
-        return goal_state
-
+        return target_x, target_y
 
 class Cheetah(EnvWrapper):
     state_dim = 18 - 1 + 2

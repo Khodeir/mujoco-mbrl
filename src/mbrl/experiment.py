@@ -86,6 +86,7 @@ class Agent(Enum):
         num_rollouts_per_iteration,
         num_train_iterations,
         writer,
+        base_path,
     ):
         if self is Agent.GoalStateAgent:
             action_cost = models.CoshLoss()
@@ -106,6 +107,7 @@ class Agent(Enum):
                 num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
                 num_train_iterations=config["num_train_iterations"],
                 writer=writer,
+                base_path=base_path
             )
             return agent
         if self is Agent.RewardPredictingAgent:
@@ -119,6 +121,7 @@ class Agent(Enum):
                 num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
                 num_train_iterations=config["num_train_iterations"],
                 writer=writer,
+                base_path=base_path
             )
             return agent
 
