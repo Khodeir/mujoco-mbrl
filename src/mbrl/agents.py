@@ -38,7 +38,7 @@ class MPCAgent:
         num_train_iterations: int,
         writer: SummaryWriter,
         base_path: str,
-        dataset: Optional[TransitionsDataset]
+        dataset: Optional[TransitionsDataset] = None
     ):
         self.environment = environment
         self.planner = planner
@@ -48,7 +48,7 @@ class MPCAgent:
         self.num_rollouts_per_iteration = num_rollouts_per_iteration
         self.num_train_iterations = num_train_iterations
         self.optimizer = optimizer
-        self.dataset = TransitionsDataset(transitions_capacity=10000) if dataset is not None else dataset
+        self.dataset = TransitionsDataset(transitions_capacity=10000) if dataset is None else dataset
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
         self.last_trajectory = None
@@ -106,19 +106,20 @@ class MPCAgent:
         self.writer.add_histogram(
             "RolloutRewards/{}".format(rollout_type), sum_rewards, self.train_iterations
         )
-        for rollout in rollouts:
-            if hasattr(rollout, "frames"):
-                self.writer.add_video(
-                    "LastRollout/{}".format(rollout_type),
-                    torch.stack(
-                        [
-                            torch.from_numpy(np.array(f).transpose(2, 0, 1))
-                            for f in rollout.frames
-                        ],
-                        dim=0,
-                    ).unsqueeze(0),
-                    self.train_iterations,
-                )
+        # I think this gif generator is broken
+        # for rollout in rollouts:
+        #     if hasattr(rollout, "frames"):
+        #         self.writer.add_video(
+        #             "LastRollout/{}".format(rollout_type),
+        #             torch.stack(
+        #                 [
+        #                     torch.from_numpy(np.array(f).transpose(2, 0, 1))
+        #                     for f in rollout.frames
+        #                 ],
+        #                 dim=0,
+        #             ).unsqueeze(0),
+        #             self.train_iterations,
+        #         )
 
 
 class GoalStateAgent(MPCAgent):
@@ -136,7 +137,7 @@ class GoalStateAgent(MPCAgent):
         action_cost: ScalarTorchFunc,
         state_cost: ScalarTorchFunc,
         base_path: str,
-        dataset: Optional[TransitionsDataset]
+        dataset: Optional[TransitionsDataset] = None
     ):
         super().__init__(
             environment=environment,
@@ -149,7 +150,7 @@ class GoalStateAgent(MPCAgent):
             num_train_iterations=num_train_iterations,
             writer=writer,
             base_path=base_path,
-            dataset=dataset
+            dataset=dataset,
         )
 
         self.action_cost = action_cost
@@ -259,7 +260,7 @@ class RewardAgent(MPCAgent):
         num_train_iterations: int,
         writer: SummaryWriter,
         base_path: str,
-        dataset: Optional[TransitionsDataset]
+        dataset: Optional[TransitionsDataset] = None
     ):
         super().__init__(
             environment=environment,
@@ -271,7 +272,8 @@ class RewardAgent(MPCAgent):
             num_rollouts_per_iteration=num_rollouts_per_iteration,
             num_train_iterations=num_train_iterations,
             writer=writer,
-            base_path=base_path
+            base_path=base_path,
+            dataset=dataset
         )
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
         self.normalize_state = self.dataset.normalize_obs
