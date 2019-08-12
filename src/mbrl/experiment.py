@@ -108,7 +108,8 @@ class Agent(Enum):
                 num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
                 num_train_iterations=config["num_train_iterations"],
                 writer=writer,
-                base_path=base_path
+                base_path=base_path,
+                dataset=None
             )
             return agent
         if self is Agent.RewardPredictingAgent:

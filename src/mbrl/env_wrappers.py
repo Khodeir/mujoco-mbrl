@@ -110,15 +110,16 @@ class EnvWrapper(dm_env.Environment):
         state, observation, _, _ = self.reset()
         if set_state:
             initial_state = self.sample_state() if initial_state is None else initial_state
+        else:
+            # the current state obtained from self.reset
+            initial_state = self._env.physics.state()
+        # if we need to modify the goal_state, we'll have to also reset the initial state
+        if goal_state is not None and hasattr(self, 'set_target'):
             with self._env.physics.reset_context():
                 self._env.physics.set_state(initial_state)
-                if goal_state is not None and hasattr(self, 'set_target'):
-                    self.set_target(goal_state)
+                self.set_target(goal_state)
+            state, observation, _, _ = self.step(self.sample_action())
 
-            state = self.get_state()
-
-        # action = get_action(dict(state=state, observation=observation))
-        state, observation, _, _ = self.step(self.sample_action())
         states.append(state)
         observations.append(observation)
         rewards.append(None)
