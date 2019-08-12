@@ -203,7 +203,7 @@ class RandomShootingPlanner(ModelPlanner):
             if i == 0:
                 states = initial_state.unsqueeze(dim=0).repeat_interleave(num_trajectories, dim=0)
             else:
-                states = state_list[i * num_trajectories : (i + 1) * num_trajectories]
+                states = state_list[(i - 1) * num_trajectories : i * num_trajectories]
             actions = action_list[i * num_trajectories : (i + 1) * num_trajectories]
             # infer with model
             state_list[i * num_trajectories : (i + 1) * num_trajectories] = model(states, actions)
