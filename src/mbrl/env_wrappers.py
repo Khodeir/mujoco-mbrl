@@ -234,6 +234,19 @@ class Reacher(EnvWrapper):
         target_y = mag * np.sin(theta)
         return target_x, target_y
 
+    def sample_rollouts_biased_rewards(self, num_rollouts=20, num_steps=100):
+        rollouts = []
+        for _ in range(num_rollouts):
+            initial_state = self.set_goal_state()
+            rollout = self.get_rollout(
+                num_steps=num_steps,
+                set_state=True,
+                goal_state=initial_state,
+                initial_state=initial_state
+            )
+            rollouts.append(rollout)
+        return rollouts
+
 class Cheetah(EnvWrapper):
     state_dim = 18 - 1 + 2
     observation_dim = 17

@@ -2,6 +2,7 @@ import os
 import argparse
 from enum import Enum
 import torch
+import numpy as np
 from src.mbrl import agents
 from src.mbrl import models
 from src.mbrl import planners
@@ -114,16 +115,16 @@ class Agent(Enum):
             return agent
         if self is Agent.RewardPredictingAgent:
             if isinstance(environment, env_wrappers.Reacher):
-                rollouts = []
-                for i in range(20):
-                    initial_state = environment.set_goal_state()
-                    rollout = environment.get_rollout(
-                        num_steps=250,
-                        set_state=True,
-                        goal_state=initial_state,
-                        initial_state=initial_state
+                rollouts = environment.sample_rollouts_biased_rewards(num_rollouts=20, num_steps=config["rollout_length"])
+                rollout_rewards = np.array([r.rewards[1:] for r in rollouts])
+                logger.debug(
+                    'reacher initial rollouts stats:\n\tmin: {}\n\tmean: {}\n\tmax: {}\n\tnonzerocount: {}'.format(
+                        (rollout_rewards).min(),
+                        (rollout_rewards).mean(),
+                        (rollout_rewards).max(),
+                        (rollout_rewards > 0).sum()
                     )
-                    rollouts.append(rollout)
+                )
                 dataset = data.TransitionsDataset(rollouts=rollouts, transitions_capacity=10000)
             else:
                 dataset = None
