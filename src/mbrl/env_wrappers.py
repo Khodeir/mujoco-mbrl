@@ -195,7 +195,7 @@ class Reacher(EnvWrapper):
     def get_goal_weights(self) -> torch.Tensor:
         weights = torch.zeros(self.observation_dim)
         weights[0:2] = self._state_penalty
-        weights[4:] = self._state_penalty
+        weights[4:] = 0 # no penalty on the target's location
 
         weights[2:4] = (
             self._state_penalty / 20.0

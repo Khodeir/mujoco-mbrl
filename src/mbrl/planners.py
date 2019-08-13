@@ -116,7 +116,7 @@ class GradientDescentPlanner(ModelPlanner):
         states_tensor[0] = initial_state
         actions_tensor = torch.cat(action_list, dim=0)
         actions_tensor.requires_grad = True
-        traj_optimizer = torch.optim.Adam([actions_tensor], lr=0.1)
+        traj_optimizer = torch.optim.Adam([actions_tensor], lr=0.01)
 
         for _ in range(num_iterations):
             traj_optimizer.zero_grad()            

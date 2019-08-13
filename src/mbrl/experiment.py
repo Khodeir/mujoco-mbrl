@@ -93,8 +93,7 @@ class Agent(Enum):
         if self is Agent.GoalStateAgent:
             action_cost = models.CoshLoss()
             state_cost = models.SmoothAbsLoss(
-                # weights=environment.get_goal_weights(),
-                weights=1,
+                weights=environment.get_goal_weights(),
                 goal_state=None
             )
             agent = agents.GoalStateAgent(
