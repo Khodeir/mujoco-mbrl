@@ -53,7 +53,6 @@ class MPCAgent:
         self.train_iterations = 0
         self.last_trajectory = None
         self.base_path = base_path
-        self.training_goal_state = None
         self.num_initial_rollouts = 20
 
     def get_action(self, state: torch.Tensor) -> torch.Tensor:
@@ -82,14 +81,15 @@ class MPCAgent:
                         get_action=get_action,
                         mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.train_iterations)),
                         set_state=set_state,
-                        goal_state=self.training_goal_state if override_goal_state is None else override_goal_state,
+                        goal_state=override_goal_state,
+                        initial_state=override_initial_state
 
                     )
                 )
                 continue
             rollouts.append(
                 self.environment.get_rollout(
-                    self.rollout_length, get_action, set_state=set_state, goal_state=self.training_goal_state, initial_state=override_initial_state
+                    self.rollout_length, get_action, set_state=set_state, goal_state=override_goal_state, initial_state=override_initial_state
                 )
             )
 
@@ -160,6 +160,7 @@ class GoalStateAgent(MPCAgent):
         self.normalize_state = self.dataset.normalize_obs
         self.unnormalize_state = self.dataset.unnormalize_obs
         self.normalize_action = self.dataset.normalize_action
+        self.training_goal_state = None
 
     def _reset_goal(self):
         self.training_goal_state = self.environment.set_goal()
@@ -209,7 +210,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts(num_rollouts=self.num_initial_rollouts)
+        self._add_rollouts(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -219,7 +220,7 @@ class GoalStateAgent(MPCAgent):
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts(get_action=self.get_action)
+            self._add_rollouts(get_action=self.get_action, override_goal_state=self.training_goal_state)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
