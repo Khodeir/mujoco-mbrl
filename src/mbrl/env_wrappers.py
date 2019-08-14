@@ -45,7 +45,10 @@ class EnvWrapper(dm_env.Environment):
         raise NotImplementedError
 
     def sample_action(self, batch_size=None) -> torch.Tensor:
-        action_spec = self.action_spec()
+        return self.sample_action(self.action_spec(), batch_size)
+
+    @classmethod
+    def _sample_action(action_spec, batch_size=None) -> torch.Tensor:
         minimum = max(
             action_spec.minimum[0], -3
         )  # Clipping because LQR task has INF bounds
