@@ -1,9 +1,9 @@
-from typing import List
+from typing import List, Optional
 from collections import defaultdict
 import torch
 from torch.utils.data import Dataset, Sampler
 import numpy as np
-
+from enum import Enum
 
 class Rollout:
     def __init__(self, states, observations, actions, rewards):
@@ -47,12 +47,6 @@ class Rollout:
     @property
     def flat_observations(self):
         return self._flat_obs
-
-    def get_sum_of_state_costs(self, state_cost):
-        return sum(map(state_cost, self.states))
-
-    def get_sum_of_action_costs(self, action_costs):
-        return sum(map(action_costs, self.actions[:-1]))
 
     def __len__(self):
         return self._length
@@ -127,14 +121,18 @@ class Rollout:
 
         return rollout[1:-1]
 
-
+class TransitionsDatasetDataMode(Enum):
+    state_only = 'state_only'
+    obs_only = 'obs_only'
+    both = 'both'
 class TransitionsDataset(Dataset):
     def __init__(
         self,
-        rollouts: List[Rollout],
+        rollouts: Optional[List[Rollout]] = None,
         transitions_capacity: int = int(1e6),
         horizon: int = 1,
-        normalise=True
+        normalise=True,
+        data_mode=TransitionsDatasetDataMode.both
     ):
         super().__init__()
         self.capacity = transitions_capacity
@@ -149,10 +147,14 @@ class TransitionsDataset(Dataset):
             "reward": None,
         }
         self._normalise = normalise
+        self._data_mode = data_mode
 
         # This check exists so that an empty dataset can be instantiated
-        if len(self._rollouts) > 0:
+        if rollouts is not None:
             self.add_rollouts(rollouts)
+    
+    def set_data_mode(self, data_mode):
+        self._data_mode = TransitionsDatasetDataMode(data_mode)
 
     def add_rollouts(self, rollouts):
         if self._flat_obs is None:
@@ -193,6 +195,10 @@ class TransitionsDataset(Dataset):
     def statistics(self):
         return self._stats
 
+    @property
+    def rollouts(self):
+        return self._rollouts
+
     def __len__(self):
         return self._occupied_capacity
 
@@ -207,14 +213,21 @@ class TransitionsDataset(Dataset):
             start_idx = np.random.randint(0, len(rollout) - self.horizon)
 
         stats = self._stats if self._normalise else None
-        transition = rollout.get_multistep_transitions(
+        (inputs, outputs) = rollout.get_multistep_transitions(
             start_idx, self.horizon, stats=stats
         )
-
-        return transition
-
+        if self._data_mode == TransitionsDatasetDataMode.state_only:
+            inputs = [ inp[::2] for inp in inputs]
+            outputs =  [outp[:-1] for outp in outputs]
+        elif self._data_mode == TransitionsDatasetDataMode.obs_only:
+            inputs = [ inp[1::] for inp in inputs]
+            outputs =  [outp[::2] for outp in outputs]
+        elif self._data_mode is not TransitionsDatasetDataMode.both:
+            raise ValueError('Unknown mode.')
+        return inputs, outputs
+        
     def _update_stats(self):
-        stats = {}
+        stats = self._stats
         all_states, all_actions, all_rewards = [], [], []
         all_obs = [] if self._flat_obs else defaultdict(lambda: [])
         for r in self._rollouts:
@@ -239,38 +252,12 @@ class TransitionsDataset(Dataset):
                 k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
             }
 
-        self._stats = stats
-
-    def unnormalize_state(self, state):
-        if not self._normalise:
-            return state
-        # (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
-        return (state * self._stats["states"]["std"]) + self._stats["states"]["mean"]
-
-    def normalize_state(self, state):
-        if not self._normalise:
-            return state
-        return (state - self._stats["states"]["mean"]) / self._stats["states"]["std"]
-
-    def unnormalize_obs(self, obs):
-        if not self._normalise:
-            return obs
-        return (obs * self._stats["observations"]["std"]) + self._stats["observations"]["mean"]
-
-    def normalize_obs(self, obs):
-        if not self._normalise:
-            return obs
-        return (obs - self._stats["observations"]["mean"]) / self._stats["observations"]["std"]
-
-    def unnormalize_action(self, action):
-        if not self._normalise:
-            return action
-        return (action * self._stats["actions"]["std"]) + self._stats["actions"]["mean"]
-
-    def normalize_action(self, action):
-        if not self._normalise:
-            return action
-        return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
+    @staticmethod
+    def unnormalize_field(field_value, field_name, stats):
+        return (field_value * stats[field_name]["std"]) + stats[field_name]["mean"]
+    @staticmethod
+    def normalize_field(field_value, field_name, stats):
+        return (field_value - stats[field_name]["mean"]) / stats[field_name]["std"]
 
     @staticmethod
     def _get_stats(array):
@@ -281,14 +268,13 @@ class TransitionsDataset(Dataset):
             "max": torch.max(array, dim=0).values,
         }
 
-
 class TransitionsSampler(Sampler):
     def __init__(self, data_source: TransitionsDataset):
         self.data_source = data_source
 
     def __iter__(self):
         possible_transitions = []
-        for roll_idx, roll in enumerate(self.data_source._rollouts):
+        for roll_idx, roll in enumerate(self.data_source.rollouts):
             for start_idx in range(len(roll) - self.data_source.horizon):
                 possible_transitions.append((roll_idx, start_idx))
         np.random.shuffle(possible_transitions)

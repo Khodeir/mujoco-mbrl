@@ -16,7 +16,7 @@ class DynamicsModel(nn.Module):
         action,
         normalize_action=None,
         normalize_state=None,
-        unnormalize=None,
+        unnormalize_state=None,
     ):
         if normalize_action:
             action = normalize_action(action)
@@ -24,9 +24,8 @@ class DynamicsModel(nn.Module):
             state = normalize_state(state)
         x = torch.cat([state, action], dim=1)
         out = self._forward(x)
-        if unnormalize:
-            out = unnormalize(out)
-
+        if unnormalize_state:
+            out = unnormalize_state(out)
         return out
 
     def evaluate_model(self, dataset, batch_size, criterion=None):
@@ -38,15 +37,15 @@ class DynamicsModel(nn.Module):
         evals = []
         for inputs, outputs in eval_data:
             for (
-                (states, observations, actions),
-                (rewards, next_states, next_observations),
+                (states, actions),
+                (rewards, next_states),
             ) in zip(inputs, outputs):
                 next_states_hat = self.forward(
                     states,
                     actions,
                     normalize_action=None,
                     normalize_state=None,
-                    unnormalize=None,
+                    unnormalize_state=None,
                 )
                 evals.append(criterion(next_states_hat, next_states).detach().numpy())
         return evals
@@ -70,15 +69,15 @@ class DynamicsModel(nn.Module):
             for inputs, outputs in train_data:
                 loss = 0
                 for (
-                    (states, observations, actions),
-                    (rewards, next_states, next_observations),
+                    (states, actions),
+                    (rewards, next_states),
                 ) in zip(inputs, outputs):
                     next_states_hat = self.forward(
                         states,
                         actions,
                         normalize_action=None,
                         normalize_state=None,
-                        unnormalize=None,
+                        unnormalize_state=None,
                     )
                     loss = loss + criterion(next_states_hat, next_states)
 
@@ -123,9 +122,10 @@ class LinearModel(DynamicsModel):
         return x if self.noise is None else x + torch.randn_like(x) * self.noise
 
 
-class ModelWithReward(DynamicsModel):
+class ModelWithReward(nn.Module):
     def __init__(self, state_dim, action_dim, hidden_units=200):
         super(ModelWithReward, self).__init__()
+        self.train_iterations = 0
         self.linear1 = nn.Linear(state_dim + action_dim, hidden_units)
         self.linear2 = nn.Linear(hidden_units, hidden_units)
         self.linear3 = nn.Linear(hidden_units, state_dim)
@@ -135,10 +135,86 @@ class ModelWithReward(DynamicsModel):
     def _forward(self, x):
         x = self.activation_fn(self.linear1(x))
         x = self.activation_fn(self.linear2(x))
-        s_diff = self.linear3(x)
+        state = self.linear3(x)
         reward = self.linear4(x)
 
-        return s_diff, reward
+        return state, reward
+
+    def forward(
+        self,
+        state,
+        action,
+        normalize_state=None,
+        unnormalize_state=None,
+        normalize_action=None,
+        unnormalize_reward=None
+    ):
+        if normalize_action:
+            action = normalize_action(action)
+        if normalize_state:
+            state = normalize_state(state)
+        x = torch.cat([state, action], dim=1)
+        state, reward = self._forward(x)
+        if unnormalize_reward:
+            reward = unnormalize_reward(reward)
+        if unnormalize_state:
+            state = unnormalize_state(state)
+
+        return state, reward
+
+    def train_model(
+        self,
+        dataset: TransitionsDataset,
+        optimizer: torch.optim.Optimizer,
+        batch_size: int = 512,
+        num_epochs: int = 50,
+        criterion=None,
+        writer=None,
+    ):
+        if not criterion:
+            criterion = torch.nn.MSELoss()
+        train_data = DataLoader(
+            dataset, batch_size=batch_size, sampler=TransitionsSampler(dataset)
+        )
+        num_iters = 0
+        for epoch in range(num_epochs):
+            for inputs, outputs in train_data:
+                loss = 0
+                total_state_loss, total_rew_loss = 0, 0
+                for (
+                    (states, actions),
+                    (rewards, next_states),
+                ) in zip(inputs, outputs):
+                    next_state_hat, rewards_hat = self.forward(
+                        states,
+                        actions,
+                        normalize_action=None,
+                        normalize_state=None,
+                        unnormalize_state=None,
+                        unnormalize_reward=None
+                    )
+                    state_loss = criterion(next_state_hat, next_states)
+                    rew_loss = criterion(rewards_hat, rewards.unsqueeze(dim=1))
+                    loss = loss + state_loss + rew_loss
+                    total_state_loss += state_loss
+                    total_rew_loss += rew_loss
+
+                optimizer.zero_grad()
+                loss.backward(retain_graph=True)
+                optimizer.step()
+                num_iters += 1
+
+                if writer is not None:
+                    writer.add_scalar(
+                        "loss/state/{}".format(self.train_iterations), total_state_loss, num_iters
+                    )
+                    writer.add_scalar(
+                        "loss/reward/{}".format(self.train_iterations), total_rew_loss, num_iters
+                    )
+                    writer.add_scalar(
+                        "loss/total/{}".format(self.train_iterations), loss, num_iters
+                    )
+        self.train_iterations += 1
 
 
 class CostModel(nn.Module):

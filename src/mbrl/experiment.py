@@ -2,10 +2,12 @@ import os
 import argparse
 from enum import Enum
 import torch
+import numpy as np
 from src.mbrl import agents
 from src.mbrl import models
 from src.mbrl import planners
 from src.mbrl import env_wrappers
+from src.mbrl import data
 from src.mbrl.logger import logger
 from tensorboardX import SummaryWriter
 
@@ -27,15 +29,18 @@ class Planner(Enum):
 class Model(Enum):
     NeuralNet = "nn"
     Linear = "lin"
+    ModelWithReward = "rw"
 
     def __str__(self):
         return self.value
 
     def construct(self, environment):
         if self is Model.NeuralNet:
-            return models.Model(environment.state_dim, environment.action_dim)
+            return models.Model(environment.observation_dim, environment.action_dim)
         if self is Model.Linear:
-            return models.LinearModel(environment.state_dim, environment.action_dim)
+            return models.LinearModel(environment.observation_dim, environment.action_dim)
+        if self is Model.ModelWithReward:
+            return models.ModelWithReward(environment.observation_dim, environment.action_dim, hidden_units=50)
 
 
 class Optimizer(Enum):
@@ -47,7 +52,7 @@ class Optimizer(Enum):
 
     def construct(self, model):
         if self is Optimizer.Adam:
-            learn_rate = 0.001
+            learn_rate = 0.01
             l2_penalty = 0
             return torch.optim.Adam(
                 model.parameters(), lr=learn_rate, weight_decay=l2_penalty
@@ -65,16 +70,92 @@ def Environment(v):
     return env_wrappers.EnvWrapper.load(env_name, task_name)
 
 
+class Agent(Enum):
+    GoalStateAgent = "gs"
+    RewardPredictingAgent = "rw"
+
+    def __str__(self):
+        return self.value
+
+    def construct(
+        self,
+        environment,
+        planner,
+        model,
+        horizon,
+        optimizer,
+        rollout_length,
+        num_rollouts_per_iteration,
+        num_train_iterations,
+        writer,
+        base_path,
+    ):
+        if self is Agent.GoalStateAgent:
+            action_cost = models.CoshLoss()
+            state_cost = models.SmoothAbsLoss(
+                weights=environment.get_goal_weights(),
+                goal_state=None
+            )
+            agent = agents.GoalStateAgent(
+                environment=environment,
+                planner=planner,
+                model=model,
+                horizon=horizon,
+                action_cost=action_cost,
+                state_cost=state_cost,
+                optimizer=optimizer,
+                rollout_length=rollout_length,
+                num_rollouts_per_iteration=num_rollouts_per_iteration,
+                num_train_iterations=num_train_iterations,
+                writer=writer,
+                base_path=base_path,
+                dataset=None
+            )
+            return agent
+        if self is Agent.RewardPredictingAgent:
+            if isinstance(environment, env_wrappers.Reacher):
+                rollouts = environment.sample_rollouts_biased_rewards(num_rollouts=20, num_steps=config["rollout_length"])
+                rollout_rewards = np.array([r.rewards[1:] for r in rollouts])
+                logger.debug(
+                    'reacher initial rollouts stats:\n\tmin: {}\n\tmean: {}\n\tmax: {}\n\tnonzerocount: {}'.format(
+                        (rollout_rewards).min(),
+                        (rollout_rewards).mean(),
+                        (rollout_rewards).max(),
+                        (rollout_rewards > 0).sum()
+                    )
+                )
+                dataset = data.TransitionsDataset(rollouts=rollouts, transitions_capacity=10000)
+            else:
+                dataset = None
+            agent = agents.RewardAgent(
+                environment=environment,
+                planner=planner,
+                model=model,
+                horizon=config["horizon"],
+                optimizer=optimizer,
+                rollout_length=config["rollout_length"],
+                num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
+                num_train_iterations=config["num_train_iterations"],
+                writer=writer,
+                base_path=base_path,
+                dataset=dataset
+            )
+            if isinstance(environment, env_wrappers.Reacher):
+                agent.num_initial_rollouts = 0
+            return agent
+
+
 CONFIG_DEF = (
     {"name": "exp_dir", "type": str},
+    {"name": "agent", "type": Agent, "choices": list(Agent)},
     {"name": "environment", "type": Environment},
     {"name": "planner", "type": Planner, "choices": list(Planner)},
     {"name": "model", "type": Model, "choices": list(Model)},
-    {"name": "optimizer", "type": Optimizer, "choices": list(Optimizer)},
+    {"name": "optimizer", "type": Optimizer, "choices": list(Optimizer), "default": "adam"},
     {"name": "horizon", "type": int, "default": 20},
-    {"name": "rollout_length", "type": int, "default": 25},
-    {"name": "num_rollouts_per_iteration", "type": int, "default": 10},
-    {"name": "num_train_iterations", "type": int, "default": 2},
+    {"name": "rollout_length", "type": int, "default": 200},
+    {"name": "num_rollouts_per_iteration", "type": int, "default": 5},
+    {"name": "num_train_iterations", "type": int, "default": 10},
 )
 
 
@@ -88,29 +169,21 @@ def main(config):
     planner = config["planner"].construct()
     model = config["model"].construct(environment)
     optimizer = config["optimizer"].construct(model)
-
-    action_cost = models.CoshLoss()
-    state_cost = models.SmoothAbsLoss(
-        weights=environment.get_goal_weights(), goal_state=None
-    )
-
-    agent = agents.MPCAgent(
+    agent = config['agent'].construct(
         environment=environment,
         planner=planner,
         model=model,
         horizon=config["horizon"],
-        action_cost=action_cost,
-        state_cost=state_cost,
         optimizer=optimizer,
         rollout_length=config["rollout_length"],
         num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
         num_train_iterations=config["num_train_iterations"],
         writer=writer,
+        base_path=config["exp_dir"],
     )
-
     agent.train()
-    agents.Agent.save(agent, os.path.join(config["exp_dir"], "agent_final.pkl"))
-
+    agents.save(agent, os.path.join(config["exp_dir"], "agent_final.pkl"))
+    return agent
 
 def parse_args(config_def=CONFIG_DEF):
     parser = argparse.ArgumentParser(
@@ -126,6 +199,8 @@ def parse_args(config_def=CONFIG_DEF):
 
 
 if __name__ == "__main__":
+     # this needs to be under the __main__ block so it isnt called on child processes
+    torch.multiprocessing.set_start_method('forkserver')
     config = parse_args()
     print(config)
     main(config)
