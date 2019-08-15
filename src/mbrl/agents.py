@@ -38,7 +38,6 @@ class MPCPolicy:
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         if state_and_obs['timestep'] == 0:
             self.last_trajectory = None
-        # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         if self.last_trajectory is not None:
             initial_trajectory = (
                 self.last_trajectory[0][1:],
@@ -93,13 +92,13 @@ class MPCAgent:
 
     def _add_rollouts_parallel(self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None):
         rollout_type = "policy" if get_action else "random"
+        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
         logger.info(
             "Generating {} {} rollouts of {} length.".format(
-                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+                num_rollouts, rollout_type, self.rollout_length
             )
         )
         rollouts = []
-        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
         rollouts = get_rollouts_parallel(
             env_name=self.environment._env_name,
             task_name=self.environment._task_name,
@@ -112,7 +111,7 @@ class MPCAgent:
                 initial_state=override_initial_state,
                 mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.train_iterations)),
             ),
-            num_rollouts=self.num_rollouts_per_iteration,
+            num_rollouts=num_rollouts,
         )
 
         self.dataset.add_rollouts(rollouts)
@@ -122,13 +121,13 @@ class MPCAgent:
         self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None
     ):
         rollout_type = "policy" if get_action else "random"
+        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
         logger.info(
             "Generating {} {} rollouts of {} length.".format(
-                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+                num_rollouts, rollout_type, self.rollout_length
             )
         )
         rollouts = []
-        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
         for i in range(num_rollouts):
             if record_last and i == num_rollouts - 1:
                 rollouts.append(
