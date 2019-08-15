@@ -199,6 +199,8 @@ def parse_args(config_def=CONFIG_DEF):
 
 
 if __name__ == "__main__":
+     # this needs to be under the __main__ block so it isnt called on child processes
+    torch.multiprocessing.set_start_method('forkserver')
     config = parse_args()
     print(config)
     main(config)

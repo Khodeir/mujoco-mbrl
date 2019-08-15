@@ -6,6 +6,7 @@ from src.mbrl.data import TransitionsDataset, TransitionsDatasetDataMode
 from src.mbrl.env_wrappers import EnvWrapper
 from src.mbrl.planners import ModelPlanner
 from src.mbrl.models import DynamicsModel, ModelWithReward
+from src.mbrl.parallel import get_rollouts_parallel
 from functools import partial
 from operator import itemgetter
 
@@ -87,6 +88,33 @@ class MPCAgent:
 
     def train(self):
         raise NotImplementedError
+
+    def _add_rollouts_parallel(self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None):
+        rollout_type = "policy" if get_action else "random"
+        logger.info(
+            "Generating {} {} rollouts of {} length.".format(
+                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+            )
+        )
+        rollouts = []
+        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
+        rollouts = get_rollouts_parallel(
+            env_name=self.environment._env_name,
+            task_name=self.environment._task_name,
+            flat_obs=self.environment._flat_obs,
+            get_rollouts_kwargs=dict(
+                num_steps=self.rollout_length,
+                get_action=get_action,
+                set_state=set_state,
+                goal_state=override_goal_state,
+                initial_state=override_initial_state,
+                mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.train_iterations)),
+            ),
+            num_rollouts=self.num_rollouts_per_iteration,
+        )
+
+        self.dataset.add_rollouts(rollouts)
+        self._record_metrics(rollouts, rollout_type)        
 
     def _add_rollouts(
         self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None
@@ -251,7 +279,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
+        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -261,7 +289,7 @@ class GoalStateAgent(MPCAgent):
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts(get_action=self.get_action, override_goal_state=self.training_goal_state)
+            self._add_rollouts_parallel(get_action=self.policy.get_action, override_goal_state=self.training_goal_state)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return self.policy.get_action(state_and_obs)
@@ -335,14 +363,14 @@ class RewardAgent(MPCAgent):
         )
     def train(self):
         logger.info("Starting outer training loop.")
-        self._add_rollouts(num_rollouts=self.num_initial_rollouts)
+        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             self.train_iterations = iteration
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts(get_action=self.get_action)
+            self._add_rollouts_parallel(get_action=self.policy.get_action)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return self.policy.get_action(state_and_obs)
