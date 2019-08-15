@@ -148,7 +148,8 @@ class MPCAgent:
         #             self.train_iterations,
         #         )
 
-
+def state_action_cost(state, action, state_cost, action_cost):
+    return state_cost(state) + action_cost(action)
 class GoalStateAgent(MPCAgent):
     def __init__(
         self,
@@ -186,7 +187,7 @@ class GoalStateAgent(MPCAgent):
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
         self.normalize_state = partial(self.dataset.normalize_field, field_name="observations", stats=self.dataset.statistics)
         self.unnormalize_state = partial(self.dataset.unnormalize_field, field_name="observations", stats=self.dataset.statistics)
-        self.normalize_action = partial(self.dataset.normalize_field, field_name="action", stats=self.dataset.statistics)
+        self.normalize_action = partial(self.dataset.normalize_field, field_name="actions", stats=self.dataset.statistics)
         self.training_goal_state = None
 
         self.policy = MPCPolicy(
@@ -196,7 +197,7 @@ class GoalStateAgent(MPCAgent):
                 normalize_action=self.normalize_action,
                 unnormalize_state=self.unnormalize_state,
             ),
-            cost=lambda state, action: self.state_cost(state) + self.action_cost(action),
+            cost=partial(state_action_cost, state_cost=self.state_cost, action_cost=self.action_cost),
             planner=self.planner,
             sample_action=partial(self.environment._sample_action, action_spec=self.environment.action_spec()),
             horizon=self.horizon
@@ -303,9 +304,9 @@ class RewardAgent(MPCAgent):
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
         self.normalize_state = partial(self.dataset.normalize_field, field_name="observations", stats=self.dataset.statistics)
         self.unnormalize_state = partial(self.dataset.unnormalize_field, field_name="observations", stats=self.dataset.statistics)
-        self.normalize_action = partial(self.dataset.normalize_field, field_name="action", stats=self.dataset.statistics)
-        self.normalize_reward = partial(self.dataset.normalize_field, field_name="reward", stats=self.dataset.statistics)
-        self.unnormalize_reward = partial(self.dataset.unnormalize_field, field_name="reward", stats=self.dataset.statistics)
+        self.normalize_action = partial(self.dataset.normalize_field, field_name="actions", stats=self.dataset.statistics)
+        self.normalize_reward = partial(self.dataset.normalize_field, field_name="rewards", stats=self.dataset.statistics)
+        self.unnormalize_reward = partial(self.dataset.unnormalize_field, field_name="rewards", stats=self.dataset.statistics)
 
         self.policy = MPCPolicy(
             model=compose(

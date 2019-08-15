@@ -227,7 +227,7 @@ class TransitionsDataset(Dataset):
         return inputs, outputs
         
     def _update_stats(self):
-        stats = {}
+        stats = self._stats
         all_states, all_actions, all_rewards = [], [], []
         all_obs = [] if self._flat_obs else defaultdict(lambda: [])
         for r in self._rollouts:
@@ -252,13 +252,11 @@ class TransitionsDataset(Dataset):
                 k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
             }
 
-        self._stats = stats
-
     @staticmethod
-    def unnormalize_field(field_name, field_value, stats):
+    def unnormalize_field(field_value, field_name, stats):
         return (field_value * stats[field_name]["std"]) + stats[field_name]["mean"]
     @staticmethod
-    def normalize_field(field_name, field_value, stats):
+    def normalize_field(field_value, field_name, stats):
         return (field_value - stats[field_name]["mean"]) / stats[field_name]["std"]
 
     @staticmethod
@@ -269,7 +267,6 @@ class TransitionsDataset(Dataset):
             "min": torch.min(array, dim=0).values,
             "max": torch.max(array, dim=0).values,
         }
-
 
 class TransitionsSampler(Sampler):
     def __init__(self, data_source: TransitionsDataset):

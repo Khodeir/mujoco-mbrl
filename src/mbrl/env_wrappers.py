@@ -1,21 +1,21 @@
 from typing import Tuple, Dict, Callable, Optional
 import torch
 import numpy as np
-
 from dm_control import suite
 import dm_env
 from src.mbrl.data import Rollout
 from src.mbrl.utils import Recorder
-
 # TODO: Need to make set_goal consistent with observation_dim
 # or at least have parallel implementations that are.
 class EnvWrapper(dm_env.Environment):
-    def __init__(self, env, flat_obs):
+    def __init__(self, env, flat_obs, env_name, task_name):
         self._env = env
         self._state_penalty = 1.0
         self.action_dim = env.action_spec().shape[0]
         self._action_spec = env.action_spec()
         self._flat_obs = flat_obs
+        self._env_name = env_name
+        self._task_name = task_name
 
     @staticmethod
     def load(env_name, task_name, flat_obs=True, **kwargs):
@@ -28,7 +28,7 @@ class EnvWrapper(dm_env.Environment):
                 print('Overriding control time step')
                 environment_kwargs['control_timestep'] = wrapper_class.override_control_timestep
             env = suite.load(env_name, task_name, **kwargs)
-            wrapper = eval(wrapper_classname)(env, flat_obs=flat_obs)
+            wrapper = eval(wrapper_classname)(env, flat_obs=flat_obs, env_name=env_name, task_name=task_name)
             return wrapper
         except NameError:
             raise NameError("No wrapper for {}".format(env_name))
@@ -45,9 +45,9 @@ class EnvWrapper(dm_env.Environment):
         raise NotImplementedError
 
     def sample_action(self, batch_size=None) -> torch.Tensor:
-        return self.sample_action(self.action_spec(), batch_size)
+        return self._sample_action(self.action_spec(), batch_size)
 
-    @classmethod
+    @staticmethod
     def _sample_action(action_spec, batch_size=None) -> torch.Tensor:
         minimum = max(
             action_spec.minimum[0], -3
@@ -95,6 +95,7 @@ class EnvWrapper(dm_env.Environment):
             else None
         )
         return self.get_state(), obs, reward, t.last()
+
 
     def get_rollout(
         self,
