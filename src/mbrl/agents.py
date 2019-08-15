@@ -6,6 +6,7 @@ from src.mbrl.data import TransitionsDataset, TransitionsDatasetDataMode
 from src.mbrl.env_wrappers import EnvWrapper
 from src.mbrl.planners import ModelPlanner
 from src.mbrl.models import DynamicsModel, ModelWithReward
+from src.mbrl.parallel import get_rollouts_parallel
 from functools import partial
 from operator import itemgetter
 
@@ -24,6 +25,33 @@ def save(agent, path):
         pickle.dump(agent, f)
     agent.writer = writer
 
+class MPCPolicy:
+    def __init__(self, model, cost, planner, sample_action, horizon):
+        self.model = model
+        self.planner = planner
+        self.horizon = horizon
+        self.sample_action = sample_action
+        self.last_trajectory = None
+        self.cost = cost
+
+    def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
+        if self.last_trajectory is not None:
+            initial_trajectory = (
+                self.last_trajectory[0][1:],
+                self.last_trajectory[1][0:],
+            )
+        else:
+            initial_trajectory = None
+        self.last_trajectory = self.planner.plan(
+            initial_state=state_and_obs["observation"],
+            model=self.model,
+            cost=self.cost,
+            sample_action=self.sample_action,
+            horizon=self.horizon,
+            initial_trajectory=initial_trajectory,
+        )
+        return self.last_trajectory[1][0].flatten()
 
 class MPCAgent:
     def __init__(
@@ -60,6 +88,33 @@ class MPCAgent:
 
     def train(self):
         raise NotImplementedError
+
+    def _add_rollouts_parallel(self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None):
+        rollout_type = "policy" if get_action else "random"
+        logger.info(
+            "Generating {} {} rollouts of {} length.".format(
+                self.num_rollouts_per_iteration, rollout_type, self.rollout_length
+            )
+        )
+        rollouts = []
+        num_rollouts = num_rollouts or self.num_rollouts_per_iteration
+        rollouts = get_rollouts_parallel(
+            env_name=self.environment._env_name,
+            task_name=self.environment._task_name,
+            flat_obs=self.environment._flat_obs,
+            get_rollouts_kwargs=dict(
+                num_steps=self.rollout_length,
+                get_action=get_action,
+                set_state=set_state,
+                goal_state=override_goal_state,
+                initial_state=override_initial_state,
+                mp4path=os.path.join(self.base_path, "last_rollout_{}".format(self.train_iterations)),
+            ),
+            num_rollouts=self.num_rollouts_per_iteration,
+        )
+
+        self.dataset.add_rollouts(rollouts)
+        self._record_metrics(rollouts, rollout_type)        
 
     def _add_rollouts(
         self, get_action=None, num_rollouts=None, set_state=False, record_last=True, override_goal_state=None, override_initial_state=None
@@ -121,7 +176,8 @@ class MPCAgent:
         #             self.train_iterations,
         #         )
 
-
+def state_action_cost(state, action, state_cost, action_cost):
+    return state_cost(state) + action_cost(action)
 class GoalStateAgent(MPCAgent):
     def __init__(
         self,
@@ -157,10 +213,23 @@ class GoalStateAgent(MPCAgent):
         self.state_cost = state_cost
 
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
-        self.normalize_state = self.dataset.normalize_obs
-        self.unnormalize_state = self.dataset.unnormalize_obs
-        self.normalize_action = self.dataset.normalize_action
+        self.normalize_state = partial(self.dataset.normalize_field, field_name="observations", stats=self.dataset.statistics)
+        self.unnormalize_state = partial(self.dataset.unnormalize_field, field_name="observations", stats=self.dataset.statistics)
+        self.normalize_action = partial(self.dataset.normalize_field, field_name="actions", stats=self.dataset.statistics)
         self.training_goal_state = None
+
+        self.policy = MPCPolicy(
+            model=partial(
+                self.model,
+                normalize_state=self.normalize_state,
+                normalize_action=self.normalize_action,
+                unnormalize_state=self.unnormalize_state,
+            ),
+            cost=partial(state_action_cost, state_cost=self.state_cost, action_cost=self.action_cost),
+            planner=self.planner,
+            sample_action=partial(self.environment._sample_action, action_spec=self.environment.action_spec()),
+            horizon=self.horizon
+        )
 
     def _reset_goal(self):
         self.training_goal_state = self.environment.set_goal()
@@ -210,7 +279,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
+        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -220,32 +289,16 @@ class GoalStateAgent(MPCAgent):
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts(get_action=self.get_action, override_goal_state=self.training_goal_state)
+            self._add_rollouts_parallel(get_action=self.policy.get_action, override_goal_state=self.training_goal_state)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
-        if self.last_trajectory is not None:
-            initial_trajectory = (
-                self.last_trajectory[0][1:],
-                self.last_trajectory[1][0:],
-            )
-        else:
-            initial_trajectory = None
-        self.last_trajectory = self.planner.plan(
-            initial_state=state_and_obs["observation"],
-            model=partial(
-                self.model,
-                normalize_state=self.normalize_state,
-                normalize_action=self.normalize_action,
-                unnormalize_state=self.unnormalize_state,
-            ),
-            cost=lambda state, action: self.state_cost(state)
-            + self.action_cost(action),
-            sample_action=self.environment.sample_action,
-            horizon=self.horizon,
-            initial_trajectory=initial_trajectory,
-        )
-        return self.last_trajectory[1][0].flatten()
+        return self.policy.get_action(state_and_obs)
+
+def compose(a, b):
+    def ab(*args, **kwargs):
+        return b(a(*args, **kwargs))
+
+    return ab
 
 
 class RewardAgent(MPCAgent):
@@ -277,41 +330,13 @@ class RewardAgent(MPCAgent):
             dataset=dataset
         )
         self.dataset.set_data_mode(TransitionsDatasetDataMode.obs_only)
-        self.normalize_state = self.dataset.normalize_obs
-        self.unnormalize_state = self.dataset.unnormalize_obs
-        self.normalize_action = self.dataset.normalize_action
-        self.normalize_reward = self.dataset.normalize_reward
-        self.unnormalize_reward = self.dataset.unnormalize_reward
+        self.normalize_state = partial(self.dataset.normalize_field, field_name="observations", stats=self.dataset.statistics)
+        self.unnormalize_state = partial(self.dataset.unnormalize_field, field_name="observations", stats=self.dataset.statistics)
+        self.normalize_action = partial(self.dataset.normalize_field, field_name="actions", stats=self.dataset.statistics)
+        self.normalize_reward = partial(self.dataset.normalize_field, field_name="rewards", stats=self.dataset.statistics)
+        self.unnormalize_reward = partial(self.dataset.unnormalize_field, field_name="rewards", stats=self.dataset.statistics)
 
-    def train(self):
-        logger.info("Starting outer training loop.")
-        self._add_rollouts(num_rollouts=self.num_initial_rollouts)
-        for iteration in range(1, self.num_train_iterations + 1):
-            logger.debug("Iteration {}".format(iteration))
-            self.train_iterations = iteration
-            self.model.train_model(
-                dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
-            )
-            self._add_rollouts(get_action=self.get_action)
-
-    def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        def compose(a, b):
-            def ab(*args, **kwargs):
-                return b(a(*args, **kwargs))
-
-            return ab
-
-        # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
-
-        if self.last_trajectory is not None:
-            initial_trajectory = (
-                self.last_trajectory[0][1:],
-                self.last_trajectory[1][0:],
-            )
-        else:
-            initial_trajectory = None
-        self.last_trajectory = self.planner.plan(
-            initial_state=state_and_obs["observation"],
+        self.policy = MPCPolicy(
             model=compose(
                 partial(
                     self.model,
@@ -332,9 +357,21 @@ class RewardAgent(MPCAgent):
                 ),
                 itemgetter(1),
             ),
-            sample_action=self.environment.sample_action,
-            horizon=self.horizon,
-            initial_trajectory=initial_trajectory,
+            planner=self.planner,
+            sample_action=partial(self.environment._sample_action, action_spec=self.environment.action_spec()),
+            horizon=self.horizon
         )
-        return self.last_trajectory[1][0].flatten()
+    def train(self):
+        logger.info("Starting outer training loop.")
+        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts)
+        for iteration in range(1, self.num_train_iterations + 1):
+            logger.debug("Iteration {}".format(iteration))
+            self.train_iterations = iteration
+            self.model.train_model(
+                dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
+            )
+            self._add_rollouts_parallel(get_action=self.policy.get_action)
+
+    def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        return self.policy.get_action(state_and_obs)
 

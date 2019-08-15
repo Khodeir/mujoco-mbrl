@@ -100,13 +100,13 @@ class Agent(Enum):
                 environment=environment,
                 planner=planner,
                 model=model,
-                horizon=config["horizon"],
+                horizon=horizon,
                 action_cost=action_cost,
                 state_cost=state_cost,
                 optimizer=optimizer,
-                rollout_length=config["rollout_length"],
-                num_rollouts_per_iteration=config["num_rollouts_per_iteration"],
-                num_train_iterations=config["num_train_iterations"],
+                rollout_length=rollout_length,
+                num_rollouts_per_iteration=num_rollouts_per_iteration,
+                num_train_iterations=num_train_iterations,
                 writer=writer,
                 base_path=base_path,
                 dataset=None
@@ -183,7 +183,7 @@ def main(config):
     )
     agent.train()
     agents.save(agent, os.path.join(config["exp_dir"], "agent_final.pkl"))
-
+    return agent
 
 def parse_args(config_def=CONFIG_DEF):
     parser = argparse.ArgumentParser(
@@ -199,6 +199,8 @@ def parse_args(config_def=CONFIG_DEF):
 
 
 if __name__ == "__main__":
+     # this needs to be under the __main__ block so it isnt called on child processes
+    torch.multiprocessing.set_start_method('forkserver')
     config = parse_args()
     print(config)
     main(config)

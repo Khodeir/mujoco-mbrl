@@ -227,7 +227,7 @@ class TransitionsDataset(Dataset):
         return inputs, outputs
         
     def _update_stats(self):
-        stats = {}
+        stats = self._stats
         all_states, all_actions, all_rewards = [], [], []
         all_obs = [] if self._flat_obs else defaultdict(lambda: [])
         for r in self._rollouts:
@@ -252,48 +252,12 @@ class TransitionsDataset(Dataset):
                 k: self._get_stats(torch.stack(v)) for k, v in all_obs.items()
             }
 
-        self._stats = stats
-
-    def unnormalize_state(self, state):
-        if not self._normalise:
-            return state
-        # (outputs[1] - stats["states"]["mean"]) / stats["states"]["std"]
-        return (state * self._stats["states"]["std"]) + self._stats["states"]["mean"]
-
-    def normalize_state(self, state):
-        if not self._normalise:
-            return state
-        return (state - self._stats["states"]["mean"]) / self._stats["states"]["std"]
-
-    def unnormalize_obs(self, obs):
-        if not self._normalise:
-            return obs
-        return (obs * self._stats["observations"]["std"]) + self._stats["observations"]["mean"]
-
-    def normalize_obs(self, obs):
-        if not self._normalise:
-            return obs
-        return (obs - self._stats["observations"]["mean"]) / self._stats["observations"]["std"]
-
-    def unnormalize_action(self, action):
-        if not self._normalise:
-            return action
-        return (action * self._stats["actions"]["std"]) + self._stats["actions"]["mean"]
-
-    def normalize_action(self, action):
-        if not self._normalise:
-            return action
-        return (action - self._stats["actions"]["mean"]) / self._stats["actions"]["std"]
-
-    def unnormalize_reward(self, reward):
-        if not self._normalise:
-            return reward
-        return (reward * self._stats["rewards"]["std"]) + self._stats["rewards"]["mean"]
-
-    def normalize_reward(self, reward):
-        if not self._normalise:
-            return reward
-        return (reward - self._stats["rewards"]["mean"]) / self._stats["rewards"]["std"]
+    @staticmethod
+    def unnormalize_field(field_value, field_name, stats):
+        return (field_value * stats[field_name]["std"]) + stats[field_name]["mean"]
+    @staticmethod
+    def normalize_field(field_value, field_name, stats):
+        return (field_value - stats[field_name]["mean"]) / stats[field_name]["std"]
 
     @staticmethod
     def _get_stats(array):
@@ -303,7 +267,6 @@ class TransitionsDataset(Dataset):
             "min": torch.min(array, dim=0).values,
             "max": torch.max(array, dim=0).values,
         }
-
 
 class TransitionsSampler(Sampler):
     def __init__(self, data_source: TransitionsDataset):

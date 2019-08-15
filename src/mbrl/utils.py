@@ -52,3 +52,4 @@ class Recorder:
         movie = '{}.mp4'.format(final_path)
         string = "ffmpeg -framerate 24 -y -i {} -r 30 -pix_fmt yuv420p {}".format(frames, movie)
         subprocess.call(string.split())
+
