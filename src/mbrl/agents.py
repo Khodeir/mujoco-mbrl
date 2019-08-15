@@ -36,6 +36,8 @@ class MPCPolicy:
         self.cost = cost
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        if state_and_obs['timestep'] == 0:
+            self.last_trajectory = None
         # logger.debug('Planning a step. Horizon:{}'.format(self.horizon))
         if self.last_trajectory is not None:
             initial_trajectory = (
@@ -80,7 +82,6 @@ class MPCAgent:
         self.dataset = TransitionsDataset(transitions_capacity=10000) if dataset is None else dataset
         self.writer = writer or SummaryWriter()
         self.train_iterations = 0
-        self.last_trajectory = None
         self.base_path = base_path
         self.num_initial_rollouts = 20
 
@@ -129,7 +130,6 @@ class MPCAgent:
         rollouts = []
         num_rollouts = num_rollouts or self.num_rollouts_per_iteration
         for i in range(num_rollouts):
-            self.last_trajectory = None
             if record_last and i == num_rollouts - 1:
                 rollouts.append(
                     self.environment.record_rollout(
