@@ -1,4 +1,5 @@
 import os
+NUM_WORKERS = int(os.environ.get('NUM_WORKERS', 1))
 import torch
 import pickle
 
@@ -150,7 +151,10 @@ class MPCAgent:
 
         self.dataset.add_rollouts(rollouts)
         self._record_metrics(rollouts, rollout_type)
-
+    def add_rollouts(self, *args, **kwargs):
+        if NUM_WORKERS > 1:
+            return self._add_rollouts_parallel(*args, **kwargs)
+        return self._add_rollouts(*args, **kwargs)
     def _record_metrics(self, rollouts, rollout_type):
         sum_rewards = [rollout.sum_of_rewards for rollout in rollouts]
         self.writer.add_scalar(
@@ -279,7 +283,7 @@ class GoalStateAgent(MPCAgent):
     def train(self):
         logger.info("Starting outer training loop.")
         self._reset_goal()
-        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
+        self.add_rollouts(num_rollouts=self.num_initial_rollouts, override_goal_state=self.training_goal_state)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             # TODO: Check if we need to alter the frequency of reset goal
@@ -289,7 +293,7 @@ class GoalStateAgent(MPCAgent):
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts_parallel(get_action=self.policy.get_action, override_goal_state=self.training_goal_state)
+            self.add_rollouts(get_action=self.policy.get_action, override_goal_state=self.training_goal_state)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return self.policy.get_action(state_and_obs)
@@ -363,14 +367,14 @@ class RewardAgent(MPCAgent):
         )
     def train(self):
         logger.info("Starting outer training loop.")
-        self._add_rollouts_parallel(num_rollouts=self.num_initial_rollouts)
+        self.add_rollouts(num_rollouts=self.num_initial_rollouts)
         for iteration in range(1, self.num_train_iterations + 1):
             logger.debug("Iteration {}".format(iteration))
             self.train_iterations = iteration
             self.model.train_model(
                 dataset=self.dataset, optimizer=self.optimizer, writer=self.writer
             )
-            self._add_rollouts_parallel(get_action=self.policy.get_action)
+            self.add_rollouts(get_action=self.policy.get_action)
 
     def get_action(self, state_and_obs: Dict[str, torch.Tensor]) -> torch.Tensor:
         return self.policy.get_action(state_and_obs)
