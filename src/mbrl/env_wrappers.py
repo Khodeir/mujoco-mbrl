@@ -198,12 +198,9 @@ class Reacher(EnvWrapper):
 
     def get_goal_weights(self) -> torch.Tensor:
         weights = torch.zeros(self.observation_dim)
-        weights[0:2] = self._state_penalty
-        weights[4:] = 0 # no penalty on the target's location
-
-        weights[2:4] = (
-            self._state_penalty / 20.0
-        )  # Penalties on the velocities act as dampers
+        weights[0:2] = self._state_penalty  # self._state_penalty
+        weights[2:4] = self._state_penalty # Penalties on the vector to goal
+        weights[4:] = self._state_penalty / 20  # penalty on the velocities - damping
         return weights
 
     def set_goal_state(self):
@@ -215,9 +212,9 @@ class Reacher(EnvWrapper):
         return goal_state
 
     def set_goal_observation(self): 
-        goal_state = self.set_goal_state()
-        target_x, target_y = Reacher.get_xy(goal_state)
-        goal_observation = torch.cat([goal_state, torch.tensor([target_x, target_y])])
+        goal_observation = torch.zeros(self.observation_dim, dtype=torch.float32)
+        goal_observation[0] = np.random.uniform(low=-np.pi, high=np.pi)
+        goal_observation[1] = np.random.uniform(low=-2.8, high=2.8)  # Avoid infeasible goals
         return goal_observation
 
     def set_goal(self) -> torch.Tensor:
