@@ -5,7 +5,7 @@ enum34==1.1.6
 future==0.17.1
 futures==3.1.1
 glfw==1.8.2
-lxml==4.3.4
+lxml==4.9.1
 numpy==1.16.4
 Pillow==6.1.0
 PyOpenGL==3.1.0
