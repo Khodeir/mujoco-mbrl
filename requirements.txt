@@ -1,5 +1,5 @@
 absl-py==0.7.1
-certifi==2018.8.24
+certifi==2022.12.7
 -e git+git://github.com/deepmind/dm_control.git#egg=dm_control
 enum34==1.1.6
 future==0.17.1
